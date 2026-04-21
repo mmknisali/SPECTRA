@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Models (keep trained models, ignore cache)
+*.joblib
+!models/*.joblib
+
+# Data (keep original, ignore processed)
+data/*.csv
+data/*.json
+!data/datamedx_veriset_26.xlsx
+
+# Nix
+.direnv/
+.devenv/
+devenv.local.nix
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# Cloud
+vast
+*.vast_history
