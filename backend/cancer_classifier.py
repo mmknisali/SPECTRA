@@ -43,7 +43,7 @@ def extract_features(df: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
     return np.array(X), feature_names
 
 
-def add_engineered_features(X: np.ndarray) -> np.ndarray:
+def add_engineered_features(X: np.ndarray, feature_names: list = None) -> np.ndarray:
     """Add engineered features"""
     X_new = X.copy()
 
@@ -66,6 +66,13 @@ def add_engineered_features(X: np.ndarray) -> np.ndarray:
 
 def train_model(X_train: np.ndarray, y_train: np.ndarray, labels: List[str]) -> xgb.XGBClassifier:
     """Train XGBoost classifier"""
+    from sklearn.model_selection import train_test_split
+    
+    # Split training data to create validation set for early stopping
+    X_train_sub, X_val, y_train_sub, y_val = train_test_split(
+        X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
+    )
+    
     model = xgb.XGBClassifier(
         n_estimators=200,
         max_depth=4,
@@ -74,13 +81,14 @@ def train_model(X_train: np.ndarray, y_train: np.ndarray, labels: List[str]) -> 
         colsample_bytree=0.8,
         random_state=42,
         eval_metric='mlogloss',
+        early_stopping_rounds=10,
     )
 
-    model.fit(X_train, y_train)
+    model.fit(X_train_sub, y_train_sub, eval_set=[(X_val, y_val)])
     return model
 
 
-def predict(model, X: np.ndarray) -> Tuple[str, float]:
+def predict(model: xgb.XGBClassifier, X: np.ndarray) -> Tuple[str, float]:
     """Predict cancer type and confidence"""
     pred = model.predict(X)[0]
     proba = model.predict_proba(X)[0]

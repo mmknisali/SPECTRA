@@ -14,7 +14,7 @@ API_BASE = "http://localhost:8000"
 
 st.set_page_config(
     page_title="SPECTRA - Oncology Assistant",
-    page_icon="🏥",
+    page_icon="[Hospital]",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -68,22 +68,22 @@ def recommend_treatment(cancer_type: str, labs: Optional[dict] = None) -> Option
 
 
 def main():
-    st.title("🏥 SPECTRA")
+    st.title("[Hospital] SPECTRA")
     st.markdown("### System for Predictive Evaluation, Clinical Triage & Risk Assessment")
 
     api_status = check_api()
     if api_status:
-        st.sidebar.success(f"✅ API Connected")
+        st.sidebar.success("API Connected")
         st.sidebar.json(api_status)
     else:
-        st.sidebar.error("❌ API Not Connected")
+        st.sidebar.error("API Not Connected")
         st.sidebar.info("Start the API with: `python -m backend.api`")
         return
 
     tab1, tab2, tab3 = st.tabs([
-        "🔬 Cancer Prediction",
-        "📋 ICD-10 Coder",
-        "💊 Treatment Recommender"
+        "Cancer Prediction",
+        "ICD-10 Coder",
+        "Treatment Recommender"
     ])
 
     with tab1:
@@ -208,22 +208,22 @@ def main():
                 col1, col2 = st.columns(2)
 
                 with col1:
-                    st.subheader("💊 Recommended Medications")
+                    st.subheader("Recommended Medications")
                     for med in result.get('recommended_medications', []):
                         st.markdown(f"- {med}")
 
-                    st.subheader("🔬 Recommended Labs")
+                    st.subheader("Recommended Labs")
                     for lab in result.get('recommended_labs', []):
                         st.markdown(f"- {lab}")
 
                 with col2:
-                    st.subheader("📋 Treatment Protocols")
+                    st.subheader("Treatment Protocols")
                     for proto in result.get('protocols', []):
                         st.markdown(f"- {proto}")
 
     st.markdown("---")
     st.markdown(
-        "*SPECTRA - Oncology Assistant | *Made with ❤️ for healthcare*",
+        "*SPECTRA - Oncology Assistant | *Made with love for healthcare*",
         help=None,
         unsafe_allow_html=False
     )

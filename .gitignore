@@ -57,6 +57,7 @@ data/*.json
 .direnv/
 .devenv/
 devenv.local.nix
+./.opencode
 
 # Logs
 *.log

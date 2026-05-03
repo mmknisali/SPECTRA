@@ -12,7 +12,7 @@ from typing import List, Dict, Tuple, Optional
 
 # Use absolute path to root
 import os
-ROOT_DIR = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT_DIR = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_PATH = ROOT_DIR / "datamedx_veriset_26.xlsx"
 
 

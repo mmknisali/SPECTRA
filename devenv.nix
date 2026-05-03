@@ -7,6 +7,7 @@
   ];
 
   enterShell = ''
+    export LD_LIBRARY_PATH=${pkgs.gcc-unwrapped.lib}/lib:$LD_LIBRARY_PATH
     echo ""
     echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
     echo "┃  SPECTRA - Oncology Assistant             ┃"
