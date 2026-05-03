@@ -6,7 +6,7 @@ Run this script to generate training data files
 import json
 import pandas as pd
 from pathlib import Path
-from data_processor import load_and_process, process_patient
+from .data_processor import load_and_process, process_patient
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 OUTPUT_DIR = DATA_DIR

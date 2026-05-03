@@ -97,7 +97,7 @@ def predict(model: xgb.XGBClassifier, X: np.ndarray) -> Tuple[str, float]:
 
 def main():
     """Train and save model"""
-    from data_processor import load_dataset, clean_string_column
+    from .data_processor import load_dataset, clean_string_column
 
     print("Loading data...")
     df = load_dataset()

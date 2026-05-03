@@ -3,6 +3,7 @@ SPECTRA FastAPI Backend
 Provides endpoints for cancer prediction, ICD-10 coding, and treatment recommendations
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -11,34 +12,15 @@ import joblib
 from pathlib import Path
 import json
 import pandas as pd
+import os
 
-app = FastAPI(
-    title="SPECTRA API",
-    description="Oncology Assistant API - Cancer Prediction & ICD-10 Coding",
-    version="1.0.0"
-)
+# Configure CORS origins from environment
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8501").split(",")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-MODEL_DIR = Path(__file__).parent.parent / "models"
-DATA_DIR = Path(__file__).parent.parent / "data"
-
-# Load models at startup
-classifier = None
-scaler = None
-label_encoder = None
-knowledge_base = []
-
-
-@app.on_event("startup")
-async def load_models():
-    """Load models and data"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler (replaces @app.on_event)"""
+    # Startup
     global classifier, scaler, label_encoder, knowledge_base
 
     try:
@@ -55,6 +37,36 @@ async def load_models():
         print(f"Knowledge base loaded: {len(knowledge_base)} codes")
     except FileNotFoundError:
         print("Knowledge base not found - run export_data.py first")
+
+    yield
+
+    # Shutdown
+    print("Shutting down...")
+
+
+app = FastAPI(
+    title="SPECTRA API",
+    description="Oncology Assistant API - Cancer Prediction & ICD-10 Coding",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+MODEL_DIR = Path(__file__).parent.parent / "models"
+DATA_DIR = Path(__file__).parent.parent / "data"
+
+# Load models at startup
+classifier = None
+scaler = None
+label_encoder = None
+knowledge_base = []
 
 
 # Request/Response models
@@ -137,6 +149,19 @@ async def predict_cancer(labs: PatientLabInput):
         val = getattr(labs, col, None)
         features.append(float(val) if val is not None else 0.0)
 
+    # Add engineered features (ratios) to match training
+    # Uses index positions: ALT=4, AST=5, BUN=3, Creatinine=2
+    ratios = []
+    if features[5] > 0:  # ALT index
+        ratios.append(features[4] / features[5])  # AST/ALT
+    else:
+        ratios.append(0)
+    if features[3] > 0:  # BUN index
+        ratios.append(features[2] / features[3])  # Creatinine/BUN
+    else:
+        ratios.append(0)
+
+    features.extend(ratios)
     features = scaler.transform([features])
 
     pred = classifier.predict(features)[0]
