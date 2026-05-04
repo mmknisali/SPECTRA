@@ -2,45 +2,39 @@
 
 ## System for Predictive Evaluation, Clinical Triage & Risk Assessment
 
-This repository contains the code for a healthcare AI system built for a Turkish cancer patient dataset.
+AI-powered oncology decision support for Turkish healthcare professionals.
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# 2. Process data
-python -m backend.export_data
+# Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull qwen2:7b-instruct-q5_K_M
 
-# 3. Train classifier
-python -m backend.cancer_classifier
+# Run API (Terminal 1)
+python -m backend.api
 
-# 4. Run (two terminals)
-python -m backend.api              # Terminal 1: API server
-streamlit run frontend/app.py       # Terminal 2: UI
+# Run UI (Terminal 2)
+streamlit run frontend/app.py
 ```
 
 ---
 
-## Dataset
+## Features
 
-- **File**: `datamedx_veriset_26.xlsx`
-- **Size**: 500 patients, 54 features
-- **Language**: Turkish
-- **Cancer Types**: Karaciğer kanseri, Meme Kanseri, Multipl miyelom, Over kanseri, Prostat kanseri (100 each)
+### ICD-10 Code Generator
+- Generate ICD-10 codes from clinical notes
+- 20+ codes in knowledge base
 
-### Key Columns Used
-
-| Column | Description |
-|--------|-------------|
-| `kanser_turu` | Cancer type |
-| `icd10` | ICD-10 codes |
-| `ilac` | Medications |
-| `epikriz` | Clinical notes |
-| `hba1c`, `ast`, `alt`, etc. | Lab values |
+### Treatment Recommender
+- Evidence-based treatment protocols
+- Uses RAG + Ollama/Qwen2
+- Fallback when LLM unavailable
 
 ---
 
@@ -52,109 +46,22 @@ streamlit run frontend/app.py       # Terminal 2: UI
 │  (Port 8501)     │     │  (Port 8000)     │
 └──────────────────┘     └────────┬─────────┘
                                  │
-              ┌─────────────────────┼─────────────────────┐
+              ┌────────────────────┼────────────────────┐
               ▼                                         ▼
     ┌──────────────────┐                    ┌──────────────────┐
-    │  XGBoost         │                    │  ChromaDB        │
-    │  Classifier     │                    │  Knowledge Base │
+    │  Ollama + Qwen2  │                    │  ChromaDB        │
+    │  (LLM)          │                    │  Knowledge Base  │
     └──────────────────┘                    └──────────────────┘
 ```
 
 ---
 
-## Commands
+## Requirements
 
-### Data Processing
-
-```bash
-# Export training data
-python -m backend.export_data
-
-# Train XGBoost (CPU, ~1 minute)
-python -m backend.cancer_classifier
-
-# Train LoRA (requires cloud GPU, ~$0.15-0.20/hr)
-accelerate launch train.py --model Qwen/Qwen2-1.8B --use_lora
-```
-
-### Running
-
-```bash
-# API server
-python -m backend.api
-
-# Web UI
-streamlit run frontend/app.py
-
-# With custom port
-streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
-```
-
----
-
-## Hardware Requirements
-
-| Resource | Minimum | Notes |
-|----------|---------|-------|
-| RAM | 8GB | - |
-| VRAM | 4GB | For Qwen2:1.8B inference |
-| Storage | 10GB | Models + data |
-
----
-
-## Project Structure
-
-```
-/spectra
-├── .envrc                    # direnv auto-activation
-├── devenv.nix                # devenv configuration
-├── .gitignore               # Git ignore rules
-├── backend/
-│   ├── data_processor.py     # Data loading/processing
-│   ├── export_data.py       # Export training data
-│   ├── cancer_classifier.py # XGBoost model
-│   └── api.py             # FastAPI server
-├── frontend/
-│   └── app.py            # Streamlit UI
-├── scripts/
-│   └── setup.sh          # Setup script
-├── data/
-│   ├── training_data.json   # 2000 Q&A pairs
-│   ├── knowledge_base.json# ICD-10 codes
-│   └── cleaned_patients.csv
-├── models/
-│   ├── cancer_classifier.joblib
-│   ├── feature_scaler.joblib
-│   └── label_encoder.joblib
-├── docs/                   # Documentation
-├── requirements.txt         # Dependencies
-├── README.md
-└── AGENTS.md              # This file
-```
-
----
-
-## Development
-
-### Using devenv
-
-```bash
-devenv shell
-```
-
-### Using direnv
-
-```bash
-direnv allow .
-```
-
-### Manual
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+| Resource | Minimum |
+|----------|---------|
+| RAM | 8GB |
+| Storage | 5GB |
 
 ---
 
@@ -164,57 +71,22 @@ pip install -r requirements.txt
 |----------|--------|-------------|
 | `/` | GET | API info |
 | `/health` | GET | Health check |
-| `/predict/cancer` | POST | Predict cancer type |
 | `/predict/icd10` | POST | Generate ICD-10 codes |
-| `/recommend/treatment` | POST | Get treatment recommendations |
+| `/recommend/treatment` | POST | Treatment recommendations |
+| `/docs` | GET | Swagger docs |
 
 ---
 
-## Constraints
+## Data Files
 
-### Model Training
-
-- **Full fine-tune**: Requires 12-16GB VRAM (not possible on consumer GPU)
-- **LoRA fine-tune**: Requires ~6GB VRAM (use vast.ai cloud GPU ~$0.15-0.20/hr)
-- **Inference**: Works on 4GB VRAM with Q4 quantization
-
-### Data
-
-- Training data: ~2000 Q&A pairs generated from 500 patients
-- Knowledge base: 20 ICD-10 codes extracted from dataset
+Required:
+- `data/knowledge_base.json` - ICD-10 codes
+- `data/chroma/` - Patient vector index
 
 ---
 
-## Troubleshooting
+## Configuration
 
-### Module not found
-
-```bash
-export PYTHONPATH=/path/to/spectra:$PYTHONPATH
-```
-
-### Model not found
-
-```bash
-python -m backend.cancer_classifier
-```
-
-### Port in use
-
-```bash
-lsof -i :8000
-kill $(lsof -t -i :8000)
-```
-
----
-
-## Files to Check First
-
-1. `README.md` - Project overview
-2. `docs/api.md` - API documentation
-3. `docs/development.md` - Development guide
-4. `docs/deployment.md` - Deployment guide
-
----
-
-*Last updated: April 2026*
+Environment variables:
+- `OLLAMA_HOST` - Ollama URL (default: http://localhost:11434)
+- `ALLOWED_ORIGINS` - CORS (default: *)

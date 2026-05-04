@@ -44,20 +44,22 @@ htmlcov/
 .ipynb_checkpoints/
 *.ipynb
 
-# Models (keep trained models, ignore cache)
-*.joblib
-!models/*.joblib
+# Models (unused - XGBoost removed)
+models/
 
-# Data (keep original, ignore processed)
-data/*.csv
-data/*.json
-!data/datamedx_veriset_26.xlsx
+# Data (copy manually from source)
+data/
+# Keep this for reference:
+# data/knowledge_base.json - copy from vast.ai
+# data/chroma/ - copy from vast.ai
 
 # Nix
 .direnv/
 .devenv/
 devenv.local.nix
-./.opencode
+
+# OpenCode
+.opencode/
 
 # Logs
 *.log
@@ -69,3 +71,14 @@ devenv.local.nix
 # Cloud
 vast
 *.vast_history
+
+# Unused scripts (cancer prediction removed)
+train.py
+scripts/
+backend/cancer_classifier.py
+backend/export_data.py
+backend/data_processor.py
+backend/rag_indexer.py
+
+# OS
+Thumbs.db

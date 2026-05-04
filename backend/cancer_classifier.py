@@ -50,10 +50,12 @@ def add_engineered_features(X: np.ndarray, feature_names: list = None) -> np.nda
     ratios = []
     for row in X:
         ratio = []
-        if row[5] > 0:
-            ratio.append(row[4] / row[5])
+        # AST/ALT ratio (De Ritis ratio): AST=index 6, ALT=index 4
+        if row[6] > 0:
+            ratio.append(row[6] / row[4])
         else:
             ratio.append(0)
+        # Creatinine/BUN ratio: Creatinine=index 2, BUN=index 3
         if row[3] > 0:
             ratio.append(row[2] / row[3])
         else:
@@ -66,8 +68,6 @@ def add_engineered_features(X: np.ndarray, feature_names: list = None) -> np.nda
 
 def train_model(X_train: np.ndarray, y_train: np.ndarray, labels: List[str]) -> xgb.XGBClassifier:
     """Train XGBoost classifier"""
-    from sklearn.model_selection import train_test_split
-    
     # Split training data to create validation set for early stopping
     X_train_sub, X_val, y_train_sub, y_val = train_test_split(
         X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
