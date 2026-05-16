@@ -1,6 +1,7 @@
 """
 Data preprocessing module for SPECTRA
 Loads, cleans, and structures the cancer patient dataset
+Supports Excel (.xlsx) and CSV (.csv) formats
 """
 
 import pandas as pd
@@ -8,17 +9,48 @@ import re
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 
-# Use absolute path to root
 import os
 ROOT_DIR = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATA_PATH = ROOT_DIR / "datamedx_veriset_26.xlsx"
+DATA_PATH = ROOT_DIR / "hackathon_veri.csv"
+
+CANCER_KEYWORDS = [
+    (["meme kanseri", "meme karsinomu", "meme ca", "meme malign"], "Meme Kanseri"),
+    (["karaciğer kanseri", "karaciğer karsinomu", "hepatosellüler", "hcc", "hepatom"], "Karaciğer kanseri"),
+    (["multipl miyelom", "multiple myelom", "plazma hücre"], "Multipl miyelom"),
+    (["over kanseri", "over karsinomu", "over ca", "yumurtalık kanseri"], "Over kanseri"),
+    (["prostat kanseri", "prostat karsinomu", "prostat ca"], "Prostat kanseri"),
+    (["akciğer kanseri", "akciğer karsinomu", "akciğer ca", "lung cancer", "küçük hücreli"], "Akciğer kanseri"),
+    (["kolon kanseri", "kolon karsinomu", "kolorektal", "rektum kanseri", "bağırsak kanseri"], "Kolon kanseri"),
+    (["pankreas kanseri", "pankreas karsinomu", "pankreas ca"], "Pankreas kanseri"),
+    (["mide kanseri", "mide karsinomu", "gastric", "gastrik"], "Mide kanseri"),
+    (["mesane kanseri", "mesane ca", "bladder"], "Mesane kanseri"),
+    (["böbrek kanseri", "böbrek karsinomu", "renal hücre"], "Böbrek kanseri"),
+    (["lenfoma", "hodgkin", "non-hodgkin"], "Lenfoma"),
+    (["lösemi", "lösemi"], "Lösemi"),
+    (["tiroid kanseri", "tiroid karsinomu", "tiroid ca"], "Tiroid kanseri"),
+    (["baş boyun kanseri", "baş boyun"], "Baş boyun kanseri"),
+    (["endometriyum kanseri", "endometrium", "rahim kanseri", "uterus"], "Endometriyum kanseri"),
+    (["serviks kanseri", "serviks", "rahim ağzı"], "Serviks kanseri"),
+    (["malign melanom", "melanom", "melanoma"], "Malign melanom"),
+]
+
+
+def extract_cancer_type(text: str) -> Optional[str]:
+    if not text:
+        return None
+    text_lower = text.lower()
+    for keywords, cancer_name in CANCER_KEYWORDS:
+        for kw in keywords:
+            if kw in text_lower:
+                return cancer_name
+    return None
 
 
 def load_dataset(path: str = None) -> pd.DataFrame:
     """Load dataset from Excel or CSV"""
     path = path or str(DATA_PATH)
     if path.endswith('.csv'):
-        return pd.read_csv(path)
+        return pd.read_csv(path, low_memory=False)
     return pd.read_excel(path)
 
 
@@ -65,6 +97,32 @@ def extract_lab_values(row: pd.Series) -> Dict[str, float]:
                     labs[col] = float(val)
                 except (ValueError, TypeError):
                     pass
+
+    if not labs and 'lab_sonuclari' in row.index:
+        lab_text = clean_string_column(row.get('lab_sonuclari', ''))
+        lab_patterns = {
+            'ast': r'ast[:\s]*([\d.]+)',
+            'alt': r'alt[:\s]*([\d.]+)',
+            'crp': r'crp[:\s]*([\d.]+)',
+            'kreatinin': r'kreatinin[:\s]*([\d.]+)',
+            'üre': r'üre[:\s]*([\d.]+)',
+            'sodyum': r'sodyum[:\s]*([\d.]+)',
+            'potasyum': r'potasyum[:\s]*([\d.]+)',
+            'kalsiyum': r'kalsiyum[:\s]*([\d.]+)',
+            'albumin': r'albumin[:\s]*([\d.]+)',
+            'bilirubin': r'bilirubin[:\s]*([\d.]+)',
+            'ggt': r'ggt[:\s]*([\d.]+)',
+            'ldh': r'ldh[:\s]*([\d.]+)',
+            'hba1c': r'hba1c[:\s]*([\d.]+)',
+        }
+        for lab, pattern in lab_patterns.items():
+            match = re.search(pattern, lab_text, re.IGNORECASE)
+            if match:
+                try:
+                    labs[lab] = float(match.group(1))
+                except ValueError:
+                    pass
+
     return labs
 
 
@@ -91,6 +149,15 @@ def get_primary_cancer_type(icd10_codes: List[str]) -> Optional[str]:
 def process_patient(row: pd.Series) -> Dict:
     """Process a single patient row into structured data"""
     cancer_type = row.get('kanser_turu', '')
+    if pd.isna(cancer_type) or not cancer_type:
+        for field in ['epikriz', 'hikaye', 'patoloji rapor özet', 'not']:
+            text = row.get(field, '')
+            if pd.notna(text):
+                extracted = extract_cancer_type(str(text))
+                if extracted:
+                    cancer_type = extracted
+                    break
+
     icd10_raw = clean_string_column(row.get('icd10', ''))
     medications_raw = clean_string_column(row.get('ilac', ''))
     gender_raw = clean_string_column(row.get('cinsiyet', ''))
@@ -114,10 +181,7 @@ def process_patient(row: pd.Series) -> Dict:
 
 
 def create_training_pairs(df: pd.DataFrame) -> List[Dict]:
-    """
-    Create Q&A training pairs from patient data
-    Each patient generates multiple Q&A examples
-    """
+    """Create Q&A training pairs from patient data"""
     training_data = []
 
     templates = [
@@ -165,6 +229,9 @@ def create_training_pairs(df: pd.DataFrame) -> List[Dict]:
 
 def create_icd10_knowledge_base(df: pd.DataFrame) -> List[Dict]:
     """Create knowledge base from ICD-10 codes"""
+    if 'icd10' not in df.columns:
+        return []
+
     knowledge = {}
 
     for _, row in df.iterrows():
@@ -198,11 +265,18 @@ def load_and_process() -> Tuple[pd.DataFrame, List[Dict], List[Dict]]:
 
     print(f"Loaded {len(df)} patients")
 
+    print("Extracting cancer types from clinical text...")
+    has_cancer_col = 'kanser_turu' in df.columns
+    if not has_cancer_col:
+        print("  (no 'kanser_turu' column — extracting from clinical notes)")
+
     print("Creating training pairs...")
     training_pairs = create_training_pairs(df)
+    print(f"  Found {len(training_pairs)} training pairs")
 
     print("Creating ICD-10 knowledge base...")
     knowledge_base = create_icd10_knowledge_base(df)
+    print(f"  Found {len(knowledge_base)} ICD-10 codes")
 
     return df, training_pairs, knowledge_base
 
