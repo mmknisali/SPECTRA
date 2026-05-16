@@ -1,5 +1,5 @@
 """
-LoRA Fine-tuning Script for Qwen2-1.8B
+LoRA Fine-tuning Script for Qwen2/Qwen2.5
 Train on generated Q&A pairs from patient data using 4-bit quantization
 """
 
@@ -31,11 +31,11 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="LoRA fine-tuning for Qwen2-1.8B")
+    parser = argparse.ArgumentParser(description="LoRA fine-tuning for Qwen2/Qwen2.5")
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="Qwen/Qwen2-1.8B",
+        default="Qwen/Qwen2.5-7B-Instruct",
         help="Model identifier from HuggingFace or local path",
     )
     parser.add_argument(
@@ -64,8 +64,8 @@ def parse_args():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=4,
-        help="Training batch size per device",
+        default=2,
+        help="Training batch size per device (reduce to 1 for 13B+)",
     )
     parser.add_argument(
         "--learning_rate",
