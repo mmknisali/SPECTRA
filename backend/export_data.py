@@ -63,9 +63,7 @@ def main():
     print("\nDone! Files created in data/ directory:")
     print("  - training_data.json")
     print("  - knowledge_base.json")
-    print("  - cleaned_patients.csv")
 
 
 if __name__ == "__main__":
-    import pandas as pd
     main()

@@ -81,10 +81,9 @@ def train_model(X_train: np.ndarray, y_train: np.ndarray, labels: List[str]) -> 
         colsample_bytree=0.8,
         random_state=42,
         eval_metric='mlogloss',
-        early_stopping_rounds=10,
     )
 
-    model.fit(X_train_sub, y_train_sub, eval_set=[(X_val, y_val)])
+    model.fit(X_train_sub, y_train_sub, eval_set=[(X_val, y_val)], early_stopping_rounds=10)
     return model
 
 

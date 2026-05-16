@@ -5,11 +5,14 @@ Uses ChromaDB + Ollama (local LLM) to provide treatment recommendations
 
 import os
 import json
+import logging
 import requests
 from typing import Optional, Dict, Any, List
 import chromadb
 from pathlib import Path
 from dotenv import load_dotenv
+
+logger = logging.getLogger("spectra.rag")
 
 load_dotenv()
 
@@ -44,7 +47,8 @@ def get_chroma_client() -> Optional[chromadb.PersistentClient]:
         client = chromadb.PersistentClient(path=str(CHROMA_PATH))
         client.get_collection(name=COLLECTION_NAME)
         return client
-    except Exception:
+    except Exception as e:
+        logger.warning(f"ChromaDB client init failed: {e}")
         return None
 
 
@@ -76,7 +80,8 @@ def query_similar_patients(cancer_type: str, n_results: int = 3) -> List[Dict[st
                 })
         return similar_patients
 
-    except Exception:
+    except Exception as e:
+        logger.warning(f"ChromaDB query failed: {e}")
         return []
 
 
@@ -96,8 +101,8 @@ def call_ollama_api(prompt: str, max_tokens: int = 600) -> Optional[str]:
 
         if response.status_code == 200:
             return response.json().get("response", "").strip()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Ollama API call failed: {e}")
     return None
 
 

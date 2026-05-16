@@ -4,9 +4,7 @@ Loads, cleans, and structures the cancer patient dataset
 """
 
 import pandas as pd
-import numpy as np
 import re
-import json
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 
@@ -113,7 +111,7 @@ def process_patient(row: pd.Series) -> Dict:
     }
 
 
-def create_training_pairs(df: pd.DataFrame, samples_per_patient: int = 5) -> List[Dict]:
+def create_training_pairs(df: pd.DataFrame) -> List[Dict]:
     """
     Create Q&A training pairs from patient data
     Each patient generates multiple Q&A examples

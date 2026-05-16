@@ -221,8 +221,8 @@ def main():
             clinical_note = st.text_area("Clinical Notes", height=100, placeholder="Patient presents with...")
 
         if st.button("Generate Codes", use_container_width=True):
-            if not clinical_note and not cancer_type:
-                st.warning("Enter clinical notes or select cancer type")
+            if not clinical_note:
+                st.warning("Enter clinical notes")
             else:
                 result = predict_icd10(clinical_note, cancer_type)
                 if result:

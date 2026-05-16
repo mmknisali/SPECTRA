@@ -72,7 +72,7 @@ devenv.local.nix
 vast
 *.vast_history
 
-# Unused scripts (cancer prediction removed)
+# Training and scripts (already tracked, prevent new untracked copies)
 train.py
 scripts/
 backend/cancer_classifier.py
