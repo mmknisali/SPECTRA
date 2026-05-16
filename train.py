@@ -120,6 +120,13 @@ def format_training_sample(sample: dict, tokenizer) -> dict:
 
 def prepare_dataset(data: list, tokenizer, max_length: int) -> Dataset:
     """Prepare dataset for training"""
+    if not data:
+        logger.error("Training data is empty — no Q&A pairs were generated.")
+        logger.error("Check that your CSV/XLSX has the required columns:")
+        logger.error("  kanser_turu, icd10, ilac, cinsiyet, department, epikriz")
+        logger.info("Run: python -m backend.export_data")
+        sys.exit(1)
+
     formatted_data = [format_training_sample(s, tokenizer) for s in data]
 
     dataset = Dataset.from_list(formatted_data)
