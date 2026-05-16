@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spectra HBYS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        :root {
+            --sidebar-bg: #0f1923;
+            --sidebar-hover: #182734;
+            --sidebar-active: #1e3347;
+            --accent: #0891b2;
+            --accent-light: #22d3ee;
+            --accent-subtle: rgba(8, 145, 178, 0.12);
+            --bg: #f1f5f9;
+            --card-bg: #ffffff;
+            --border: #e2e8f0;
+            --border-focus: #0891b2;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --topbar-height: 56px;
+            --sidebar-width: 240px;
+            --radius: 8px;
+            --radius-sm: 6px;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+            --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+            --shadow-lg: 0 8px 30px rgba(0,0,0,0.08);
+            --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: var(--bg);
+            display: flex;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 3px; }
+
+        .sidebar {
+            width: var(--sidebar-width);
+            height: 100vh;
+            background: var(--sidebar-bg);
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 10;
+        }
+
+        .sidebar-header {
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .sidebar-header .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sidebar-header .logo-icon {
+            width: 34px;
+            height: 34px;
+            background: var(--accent);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .sidebar-header .logo-text {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .sidebar-header .logo-text span {
+            color: var(--accent-light);
+        }
+
+        .sidebar-header .version {
+            font-size: 11px;
+            color: rgba(255,255,255,0.25);
+            margin-top: 4px;
+            padding-left: 44px;
+        }
+
+        .sidebar-menu {
+            flex: 1;
+            padding: 12px 10px;
+            overflow-y: auto;
+        }
+
+        .sidebar-menu .menu-label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: rgba(255,255,255,0.2);
+            padding: 16px 12px 6px;
+        }
+
+        .sidebar-menu .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            color: rgba(255,255,255,0.55);
+            font-size: 13.5px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: var(--radius-sm);
+            transition: all var(--transition);
+            text-decoration: none;
+            position: relative;
+        }
+
+        .sidebar-menu .menu-item i {
+            width: 20px;
+            text-align: center;
+            font-size: 15px;
+            flex-shrink: 0;
+        }
+
+        .sidebar-menu .menu-item:hover {
+            background: var(--sidebar-hover);
+            color: rgba(255,255,255,0.8);
+        }
+
+        .sidebar-menu .menu-item.active {
+            background: var(--sidebar-active);
+            color: #fff;
+        }
+
+        .sidebar-menu .menu-item.active::before {
+            content: '';
+            position: absolute;
+            left: -10px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 20px;
+            background: var(--accent);
+            border-radius: 0 3px 3px 0;
+        }
+
+        .sidebar-menu .menu-item .badge {
+            margin-left: auto;
+            background: rgba(255,255,255,0.08);
+            padding: 1px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            color: rgba(255,255,255,0.5);
+        }
+
+        .sidebar-menu .menu-item.active .badge {
+            background: var(--accent-subtle);
+            color: var(--accent-light);
+        }
+
+        .sidebar-footer {
+            padding: 14px 16px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sidebar-footer .footer-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .sidebar-footer .footer-info { flex: 1; min-width: 0; }
+        .sidebar-footer .footer-name { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8); }
+        .sidebar-footer .footer-role { font-size: 11px; color: rgba(255,255,255,0.3); }
+
+        .sidebar-footer .footer-status {
+            width: 7px; height: 7px; border-radius: 50%; background: #22c55e; flex-shrink: 0; position: relative;
+        }
+        .sidebar-footer .footer-status::after {
+            content: ''; position: absolute; inset: -3px; border-radius: 50%;
+            background: rgba(34,197,94,0.25); animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.5); opacity: 0; }
+        }
+
+        .main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; min-width: 0; }
+
+        .topbar {
+            height: var(--topbar-height);
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 28px;
+            flex-shrink: 0;
+        }
+
+        .topbar-left { display: flex; align-items: center; gap: 20px; }
+
+        .topbar-title {
+            font-size: 15px; font-weight: 600; color: var(--text-primary);
+        }
+        .topbar-title i { color: var(--accent); margin-right: 7px; }
+
+        .topbar-breadcrumb { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+        .topbar-breadcrumb span { color: var(--text-secondary); }
+
+        .topbar-right { display: flex; align-items: center; gap: 6px; }
+
+        .topbar-right .icon-btn {
+            width: 34px; height: 34px; border: none; border-radius: var(--radius-sm);
+            background: transparent; color: var(--text-muted); font-size: 15px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all var(--transition); position: relative;
+        }
+        .topbar-right .icon-btn:hover { background: var(--bg); color: var(--text-secondary); }
+
+        .topbar-right .icon-btn .notif-dot {
+            position: absolute; top: 6px; right: 6px;
+            width: 7px; height: 7px; border-radius: 50%; background: #ef4444;
+        }
+
+        .topbar-right .divider { width: 1px; height: 24px; background: var(--border); margin: 0 6px; }
+
+        .topbar-right .user-info {
+            display: flex; align-items: center; gap: 10px;
+            padding: 4px 8px; border-radius: var(--radius-sm);
+            cursor: pointer; transition: background var(--transition);
+        }
+        .topbar-right .user-info:hover { background: var(--bg); }
+        .topbar-right .user-info .user-text { text-align: right; }
+        .topbar-right .user-info .user-text .name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .topbar-right .user-info .user-text .role { font-size: 11px; color: var(--text-muted); }
+
+        .topbar-right .avatar {
+            width: 32px; height: 32px; border-radius: 50%;
+            background: var(--accent); color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 600; flex-shrink: 0;
+        }
+
+        .content {
+            flex: 1; padding: 24px 28px; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 20px;
+            animation: fadeIn 0.4s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+        .stat-card {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 16px 20px;
+            display: flex; align-items: center; gap: 16px;
+            transition: all var(--transition); box-shadow: var(--shadow-sm);
+        }
+        .stat-card:hover { box-shadow: var(--shadow-md); border-color: #cbd5e1; }
+
+        .stat-card .stat-icon {
+            width: 40px; height: 40px; border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 17px; flex-shrink: 0;
+        }
+        .stat-card .stat-icon.blue { background: #eff6ff; color: #3b82f6; }
+        .stat-card .stat-icon.green { background: #f0fdf4; color: #22c55e; }
+        .stat-card .stat-icon.purple { background: #faf5ff; color: #a855f7; }
+        .stat-card .stat-icon.orange { background: #fff7ed; color: #f97316; }
+
+        .stat-card .stat-info .stat-value { font-size: 22px; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+        .stat-card .stat-info .stat-label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+        .stat-card .stat-info .stat-change { font-size: 11px; font-weight: 600; margin-top: 2px; }
+        .stat-card .stat-info .stat-change.up { color: #22c55e; }
+        .stat-card .stat-info .stat-change.down { color: #ef4444; }
+
+        .content-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 20px; flex: 1; min-height: 0; }
+
+        .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+        .card-header {
+            padding: 16px 20px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .card-header h3 { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+        .card-header h3 i { color: var(--accent); margin-right: 7px; font-size: 13px; }
+        .card-header .card-action {
+            font-size: 12px; color: var(--accent); font-weight: 600; cursor: pointer;
+            background: none; border: none; padding: 4px 10px; border-radius: 4px;
+            transition: background var(--transition);
+        }
+        .card-header .card-action:hover { background: var(--accent-subtle); }
+        .card-body { padding: 20px; }
+
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group.full { grid-column: 1 / -1; }
+
+        .form-group label {
+            font-size: 11.5px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.3px;
+        }
+        .form-group label i { margin-right: 5px; color: var(--accent); font-size: 11px; width: 14px; }
+
+        .form-group input, .form-group select {
+            height: 36px; padding: 0 11px; border: 1px solid var(--border);
+            border-radius: var(--radius-sm); font-size: 13.5px; font-family: inherit;
+            color: var(--text-primary); background: #fafbfc;
+            transition: all var(--transition); outline: none;
+        }
+        .form-group input:hover, .form-group select:hover { border-color: #cbd5e1; }
+        .form-group input:focus, .form-group select:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px var(--accent-subtle);
+            background: #fff;
+        }
+        .form-group input::placeholder { color: var(--text-muted); font-size: 13px; }
+
+        .form-group select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px;
+        }
+
+        .form-actions { margin-top: 18px; display: flex; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+        .btn {
+            height: 36px; padding: 0 22px; border: none; border-radius: var(--radius-sm);
+            font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+            transition: all var(--transition); display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+        }
+        .btn:active { transform: scale(0.96); }
+
+        .btn-primary {
+            background: var(--accent); color: #fff;
+            box-shadow: 0 1px 3px rgba(8,145,178,0.3);
+        }
+        .btn-primary:hover { background: #0e7490; box-shadow: 0 2px 8px rgba(8,145,178,0.4); }
+        .btn-primary i { color: rgba(255,255,255,0.7); }
+        .btn-secondary { background: var(--bg); color: var(--text-secondary); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: #e2e8f0; border-color: #cbd5e1; }
+        .btn-success { background: #22c55e; color: #fff; box-shadow: 0 1px 3px rgba(34,197,94,0.3); }
+        .btn-success:hover { background: #16a34a; }
+
+        .table-wrap { overflow-x: auto; margin: 0 -4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+        table thead th {
+            text-align: left; padding: 10px 12px; font-size: 11px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap;
+        }
+
+        table tbody tr { transition: background var(--transition); }
+        table tbody tr:hover { background: #f8fafc; }
+
+        table tbody td {
+            padding: 10px 12px; border-bottom: 1px solid #f1f5f9;
+            color: var(--text-secondary); white-space: nowrap;
+        }
+        table tbody td:first-child { font-weight: 600; color: var(--text-primary); }
+
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600;
+        }
+        .status-badge.active { background: #f0fdf4; color: #16a34a; }
+        .status-badge.pending { background: #fff7ed; color: #ea580c; }
+        .status-badge.completed { background: #f1f5f9; color: #64748b; }
+        .status-badge .dot { width: 5px; height: 5px; border-radius: 50%; }
+        .status-badge.active .dot { background: #22c55e; }
+        .status-badge.pending .dot { background: #f97316; }
+        .status-badge.completed .dot { background: #94a3b8; }
+
+        .table-action {
+            background: none; border: none; color: var(--text-muted); cursor: pointer;
+            padding: 4px 6px; border-radius: 4px; transition: all var(--transition); font-size: 14px;
+        }
+        .table-action:hover { background: var(--bg); color: var(--text-primary); }
+
+        .toast-container {
+            position: fixed; top: 20px; right: 20px; z-index: 999;
+            display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+        }
+        .toast {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 12px 18px;
+            box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 10px;
+            font-size: 13px; font-weight: 500; pointer-events: auto;
+            animation: toastIn 0.35s ease; min-width: 260px;
+        }
+        .toast.removing { animation: toastOut 0.25s ease forwards; }
+        @keyframes toastIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes toastOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(40px); } }
+        .toast i { font-size: 15px; }
+        .toast.success i { color: #22c55e; }
+        .toast.error i { color: #ef4444; }
+        .toast.info i { color: var(--accent); }
+
+        .row-dropdown {
+            position: absolute; background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); box-shadow: var(--shadow-lg);
+            padding: 4px; min-width: 150px; z-index: 100; animation: fadeIn 0.15s ease; overflow: hidden;
+        }
+        .row-dropdown .dd-item {
+            padding: 8px 12px; font-size: 12.5px; font-weight: 500; color: var(--text-secondary);
+            cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 8px;
+            transition: background var(--transition); border: none; background: none;
+            width: 100%; text-align: left; font-family: inherit;
+        }
+        .row-dropdown .dd-item:hover { background: var(--bg); color: var(--text-primary); }
+        .row-dropdown .dd-item i { font-size: 13px; width: 16px; color: var(--text-muted); }
+
+        .page-placeholder {
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            text-align: center; padding: 60px 20px; color: var(--text-muted);
+        }
+        .page-placeholder.visible { display: flex; }
+        .page-placeholder i { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+        .page-placeholder h2 { font-size: 18px; color: var(--text-secondary); margin-bottom: 6px; }
+        .page-placeholder p { font-size: 13px; }
+
+        @media (max-width: 1100px) {
+            .content-grid { grid-template-columns: 1fr; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 768px) {
+            .sidebar { width: 60px; }
+            .sidebar-header .logo-text, .sidebar-header .version, .sidebar-menu .menu-label,
+            .sidebar-menu .menu-item span, .sidebar-menu .menu-item .badge,
+            .sidebar-footer .footer-info, .sidebar-footer .footer-status { display: none; }
+            .sidebar-header { padding: 14px; }
+            .sidebar-header .logo { justify-content: center; }
+            .sidebar-menu { padding: 8px 6px; }
+            .sidebar-menu .menu-item { justify-content: center; padding: 10px; }
+            .sidebar-menu .menu-item.active::before { left: -6px; }
+            .sidebar-footer { justify-content: center; padding: 12px; }
+            .stats-row { grid-template-columns: 1fr; }
+            .form-grid { grid-template-columns: 1fr; }
+            .topbar { padding: 0 16px; }
+            .content { padding: 16px; }
+            .topbar-breadcrumb { display: none; }
+            .topbar-right .user-info .user-text { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <div class="logo-icon">S</div>
+                <div class="logo-text">Spectra<span>HBYS</span></div>
+            </div>
+            <div class="version">v2.1.0 · Yönetim Paneli</div>
+        </div>
+        <div class="sidebar-menu">
+            <div class="menu-label">Menü</div>
+            <div class="menu-item active"><i class="fas fa-border-all"></i><span>Genel Bakış</span></div>
+            <div class="menu-item"><i class="fas fa-user-plus"></i><span>Hasta Kayıt</span></div>
+            <div class="menu-item"><i class="fas fa-users"></i><span>Hasta Listesi</span><span class="badge">24</span></div>
+            <div class="menu-item"><i class="fas fa-calendar-check"></i><span>Randevu</span><span class="badge">8</span></div>
+            <div class="menu-label">Klinik</div>
+            <div class="menu-item"><i class="fas fa-flask"></i><span>Tahliller</span></div>
+            <div class="menu-item"><i class="fas fa-x-ray"></i><span>Görüntüleme</span></div>
+            <div class="menu-item"><i class="fas fa-prescription"></i><span>Reçete</span></div>
+            <div class="menu-item"><i class="fas fa-file-invoice"></i><span>Faturalama</span></div>
+            <div class="menu-label">Sistem</div>
+            <div class="menu-item"><i class="fas fa-cog"></i><span>Ayarlar</span></div>
+        </div>
+        <div class="sidebar-footer">
+            <div class="footer-avatar">M</div>
+            <div class="footer-info">
+                <div class="footer-name">Dr. Mehmet Yılmaz</div>
+                <div class="footer-role">Başhekim</div>
+            </div>
+            <div class="footer-status"></div>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="topbar">
+            <div class="topbar-left">
+                <div class="topbar-title"><i class="fas fa-border-all"></i> Genel Bakış</div>
+                <div class="topbar-breadcrumb">
+                    <i class="fas fa-chevron-right" style="font-size:8px;"></i>
+                    <span>Dashboard</span>
+                </div>
+            </div>
+            <div class="topbar-right">
+                <button class="icon-btn"><i class="far fa-bell"></i><span class="notif-dot"></span></button>
+                <button class="icon-btn"><i class="far fa-question-circle"></i></button>
+                <div class="divider"></div>
+                <div class="user-info">
+                    <div class="user-text">
+                        <div class="name">Dr. Mehmet</div>
+                        <div class="role">Başhekim</div>
+                    </div>
+                    <div class="avatar">M</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-icon blue"><i class="fas fa-users"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value">284</div>
+                        <div class="stat-label">Toplam Hasta</div>
+                        <div class="stat-change up">↑ %12 bu hafta</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon green"><i class="fas fa-calendar-check"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value">18</div>
+                        <div class="stat-label">Bugünkü Randevu</div>
+                        <div class="stat-change up">↑ %8</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon purple"><i class="fas fa-flask"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value">42</div>
+                        <div class="stat-label">Bekleyen Tahlil</div>
+                        <div class="stat-change down">↓ %3</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon orange"><i class="fas fa-prescription"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value">9</div>
+                        <div class="stat-label">Bekleyen Reçete</div>
+                        <div class="stat-change up">↑ %5</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="content-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-user-plus"></i> Hasta Kayıt / Teşhis</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="dos"><i class="fas fa-folder"></i> Dosya No</label>
+                                <input type="text" id="dos" name="dos" placeholder="Örn: 2024-00142">
+                            </div>
+                            <div class="form-group">
+                                <label for="tc"><i class="fas fa-id-card"></i> TC Kimlik</label>
+                                <input type="text" id="tc" name="tc" placeholder="11 haneli TC no">
+                            </div>
+                            <div class="form-group">
+                                <label for="ad"><i class="fas fa-user"></i> Ad</label>
+                                <input type="text" id="ad" name="ad" placeholder="Hasta adı">
+                            </div>
+                            <div class="form-group">
+                                <label for="soyad"><i class="fas fa-user"></i> Soyad</label>
+                                <input type="text" id="soyad" name="soyad" placeholder="Hasta soyadı">
+                            </div>
+                            <div class="form-group">
+                                <label for="tel"><i class="fas fa-phone"></i> Telefon</label>
+                                <input type="tel" id="tel" name="tel" placeholder="5XX XXX XX XX">
+                            </div>
+                            <div class="form-group">
+                                <label for="dogum"><i class="fas fa-calendar"></i> Doğum Tarihi</label>
+                                <input type="date" id="dogum" name="dogum">
+                            </div>
+                            <div class="form-group">
+                                <label for="cins"><i class="fas fa-venus-mars"></i> Cinsiyet</label>
+                                <select id="cins" name="cins">
+                                    <option value="">Seçiniz</option>
+                                    <option value="erkek">Erkek</option>
+                                    <option value="kadin">Kadın</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="kan"><i class="fas fa-droplet"></i> Kan Grubu</label>
+                                <select id="kan" name="kan">
+                                    <option value="">Seçiniz</option>
+                                    <option value="0+">0 Rh+</option>
+                                    <option value="0-">0 Rh-</option>
+                                    <option value="a+">A Rh+</option>
+                                    <option value="a-">A Rh-</option>
+                                    <option value="b+">B Rh+</option>
+                                    <option value="b-">B Rh-</option>
+                                    <option value="ab+">AB Rh+</option>
+                                    <option value="ab-">AB Rh-</option>
+                                </select>
+                            </div>
+                            <div class="form-group full">
+                                <label for="adres"><i class="fas fa-map-pin"></i> Adres</label>
+                                <input type="text" id="adres" name="adres" placeholder="Açık adres">
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn btn-primary" id="saveBtn"><i class="fas fa-save"></i> Kaydet</button>
+                            <button class="btn btn-success" id="printBtn"><i class="fas fa-print"></i> Kaydet &amp; Yazdır</button>
+                            <button class="btn btn-secondary" id="clearBtn"><i class="fas fa-times"></i> Temizle</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-clock"></i> Son Hastalar</h3>
+                        <button class="card-action"><i class="fas fa-external-link-alt"></i> Tümü</button>
+                    </div>
+                    <div class="card-body" style="padding: 0 4px 4px;">
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                    <tr><th>Hasta</th><th>TC</th><th>İşlem</th><th>Durum</th><th></th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Ayşe Demir</td><td>123*******8</td><td>Kan Tahlili</td><td><span class="status-badge active"><span class="dot"></span> Aktif</span></td><td><button class="table-action"><i class="fas fa-ellipsis-v"></i></button></td></tr>
+                                    <tr><td>Mehmet Kaya</td><td>456*******2</td><td>MR Çekimi</td><td><span class="status-badge pending"><span class="dot"></span> Bekliyor</span></td><td><button class="table-action"><i class="fas fa-ellipsis-v"></i></button></td></tr>
+                                    <tr><td>Zeynep Yıldız</td><td>789*******5</td><td>Kontrol</td><td><span class="status-badge completed"><span class="dot"></span> Tamamlandı</span></td><td><button class="table-action"><i class="fas fa-ellipsis-v"></i></button></td></tr>
+                                    <tr><td>Ali Öztürk</td><td>234*******1</td><td>Röntgen</td><td><span class="status-badge active"><span class="dot"></span> Aktif</span></td><td><button class="table-action"><i class="fas fa-ellipsis-v"></i></button></td></tr>
+                                    <tr><td>Fatma Şahin</td><td>567*******9</td><td>EKG</td><td><span class="status-badge pending"><span class="dot"></span> Bekliyor</span></td><td><button class="table-action"><i class="fas fa-ellipsis-v"></i></button></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="page-placeholder">
+                <i class="fas fa-cube"></i>
+                <h2>Modül Adı</h2>
+                <p>Bu modüle hoş geldiniz.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+<script>
+    const menuItems = document.querySelectorAll('.sidebar-menu .menu-item');
+    const topbarTitle = document.querySelector('.topbar-title');
+    const breadcrumbSpan = document.querySelector('.topbar-breadcrumb span');
+    const contentGrid = document.querySelector('.content-grid');
+    const placeholder = document.querySelector('.page-placeholder');
+
+    const pageTitles = {
+        'Genel Bakış': { icon: 'fa-border-all', label: 'Dashboard' },
+        'Hasta Kayıt': { icon: 'fa-user-plus', label: 'Kayıt' },
+        'Hasta Listesi': { icon: 'fa-users', label: 'Liste' },
+        'Randevu': { icon: 'fa-calendar-check', label: 'Randevu' },
+        'Tahliller': { icon: 'fa-flask', label: 'Laboratuvar' },
+        'Görüntüleme': { icon: 'fa-x-ray', label: 'Radyoloji' },
+        'Reçete': { icon: 'fa-prescription', label: 'Reçete' },
+        'Faturalama': { icon: 'fa-file-invoice', label: 'Muhasebe' },
+        'Ayarlar': { icon: 'fa-cog', label: 'Sistem' },
+    };
+
+    menuItems.forEach(item => {
+        item.addEventListener('click', () => {
+            menuItems.forEach(m => m.classList.remove('active'));
+            item.classList.add('active');
+            const name = item.querySelector('span')?.textContent || 'Genel Bakış';
+            const info = pageTitles[name] || { icon: 'fa-file', label: name };
+            topbarTitle.innerHTML = `<i class="fas ${info.icon}"></i> ${name}`;
+            breadcrumbSpan.textContent = info.label;
+            if (name === 'Genel Bakış') {
+                contentGrid.style.display = 'grid';
+                placeholder.classList.remove('visible');
+            } else {
+                contentGrid.style.display = 'none';
+                placeholder.querySelector('h2').textContent = name;
+                placeholder.querySelector('p').textContent = `${name} modülüne hoş geldiniz.`;
+                placeholder.classList.add('visible');
+            }
+        });
+    });
+
+    const toastContainer = document.getElementById('toastContainer');
+    function showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        const icons = { success: 'fas fa-check-circle', error: 'fas fa-exclamation-circle', info: 'fas fa-info-circle' };
+        toast.innerHTML = `<i class="${icons[type] || icons.info}"></i> ${message}`;
+        toastContainer.appendChild(toast);
+        setTimeout(() => { toast.classList.add('removing'); setTimeout(() => toast.remove(), 260); }, 3000);
+    }
+
+    const saveBtn = document.getElementById('saveBtn');
+    const printBtn = document.getElementById('printBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const formInputs = document.querySelectorAll('.form-group input, .form-group select');
+    const tbody = document.querySelector('table tbody');
+
+    function getFormData() {
+        const data = {};
+        formInputs.forEach(el => { const name = el.name || el.id; data[name] = el.value.trim(); });
+        return data;
+    }
+
+    function validateTC(tc) { return /^\d{11}$/.test(tc); }
+    function formatTC(tc) { return tc.length !== 11 ? tc : tc.slice(0,3) + '*******' + tc.slice(-1); }
+
+    function addPatientRow(data) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${data.ad || '?'} ${data.soyad || ''}</td>
+            <td>${data.tc ? formatTC(data.tc) : '???*******?'}</td>
+            <td>Muayene</td>
+            <td><span class="status-badge active"><span class="dot"></span> Aktif</span></td>
+            <td><button class="table-action"><i class="fas fa-ellipsis-v"></i></button></td>`;
+        tbody.prepend(tr);
+        attachRowAction(tr.querySelector('.table-action'));
+        updateStats(1);
+    }
+
+    saveBtn.addEventListener('click', () => {
+        const data = getFormData();
+        if (!data.ad || !data.soyad) { showToast('Ad ve soyad alanları zorunludur.', 'error'); return; }
+        if (data.tc && !validateTC(data.tc)) { showToast('TC kimlik numarası 11 haneli olmalıdır.', 'error'); return; }
+        addPatientRow(data);
+        showToast(`${data.ad} ${data.soyad} başarıyla kaydedildi.`, 'success');
+    });
+
+    printBtn.addEventListener('click', () => {
+        const data = getFormData();
+        if (!data.ad || !data.soyad) { showToast('Kayıt için ad ve soyad gerekli.', 'error'); return; }
+        addPatientRow(data);
+        showToast(`${data.ad} ${data.soyad} kaydedildi ve yazdırılıyor...`, 'success');
+        window.print();
+    });
+
+    clearBtn.addEventListener('click', () => { formInputs.forEach(el => el.value = ''); showToast('Form temizlendi.', 'info'); });
+
+    const tcInput = document.getElementById('tc');
+    tcInput.addEventListener('blur', () => {
+        const val = tcInput.value.trim();
+        if (val && !validateTC(val)) { tcInput.style.borderColor = '#ef4444'; tcInput.style.boxShadow = '0 0 0 3px rgba(239,68,68,0.12)'; }
+        else { tcInput.style.borderColor = ''; tcInput.style.boxShadow = ''; }
+    });
+    tcInput.addEventListener('input', () => { tcInput.style.borderColor = ''; tcInput.style.boxShadow = ''; });
+
+    const telInput = document.getElementById('tel');
+    telInput.addEventListener('input', () => {
+        let val = telInput.value.replace(/\D/g, '');
+        if (val.length > 10) val = val.slice(0, 10);
+        if (val.length > 6) telInput.value = val.slice(0,3) + ' ' + val.slice(3,6) + ' ' + val.slice(6);
+        else if (val.length > 3) telInput.value = val.slice(0,3) + ' ' + val.slice(3);
+        else telInput.value = val;
+    });
+
+    const dosInput = document.getElementById('dos');
+    if (!dosInput.value) {
+        const year = new Date().getFullYear();
+        const num = String(Math.floor(Math.random() * 99999)).padStart(5, '0');
+        dosInput.value = `${year}-${num}`;
+    }
+
+    function closeAllDropdowns() { document.querySelectorAll('.row-dropdown').forEach(el => el.remove()); }
+
+    function attachRowAction(btn) {
+        btn.addEventListener('click', e => {
+            e.stopPropagation(); closeAllDropdowns();
+            const rect = btn.getBoundingClientRect();
+            const dd = document.createElement('div');
+            dd.className = 'row-dropdown';
+            dd.style.top = rect.bottom + 4 + 'px';
+            dd.style.right = window.innerWidth - rect.right + 'px';
+            dd.innerHTML = `
+                <button class="dd-item" data-action="view"><i class="fas fa-eye"></i> Görüntüle</button>
+                <button class="dd-item" data-action="edit"><i class="fas fa-edit"></i> Düzenle</button>
+                <button class="dd-item" data-action="delete" style="color:#ef4444;"><i class="fas fa-trash"></i> Sil</button>`;
+            document.body.appendChild(dd);
+            dd.querySelectorAll('.dd-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const row = btn.closest('tr');
+                    const name = row?.querySelector('td')?.textContent || 'Hasta';
+                    if (item.dataset.action === 'view') showToast(`${name} görüntüleniyor...`, 'info');
+                    else if (item.dataset.action === 'edit') showToast(`${name} düzenleniyor...`, 'info');
+                    else if (item.dataset.action === 'delete') { row?.remove(); showToast(`${name} silindi.`, 'error'); updateStats(-1); }
+                    dd.remove();
+                });
+            });
+            setTimeout(() => { document.addEventListener('click', () => closeAllDropdowns(), { once: true }); }, 0);
+        });
+    }
+    document.querySelectorAll('.table-action').forEach(attachRowAction);
+
+    function updateStats(change) {
+        const statValue = document.querySelector('.stat-card:first-child .stat-value');
+        if (statValue) statValue.textContent = (parseInt(statValue.textContent) || 0) + change;
+    }
+
+    function animateCounters() {
+        document.querySelectorAll('.stat-value').forEach(el => {
+            const target = parseInt(el.textContent) || 0;
+            if (target > 100) {
+                el.textContent = '0';
+                let current = 0;
+                const step = Math.ceil(target / 30);
+                const interval = setInterval(() => {
+                    current += step;
+                    if (current >= target) { el.textContent = target; clearInterval(interval); }
+                    else el.textContent = current;
+                }, 30);
+            }
+        });
+    }
+
+    const clockEl = document.createElement('span');
+    clockEl.style.cssText = 'font-size:12px;color:var(--text-muted);margin-left:16px;font-weight:500;';
+    document.querySelector('.topbar-left')?.appendChild(clockEl);
+    function updateClock() {
+        clockEl.textContent = new Date().toLocaleDateString('tr-TR', {
+            day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+    }
+    updateClock();
+    setInterval(updateClock, 10000);
+
+    document.querySelector('.icon-btn .fa-bell')?.parentElement?.addEventListener('click', () => {
+        showToast('Yeni bildirim bulunmamaktadır.', 'info');
+    });
+
+    setTimeout(animateCounters, 300);
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            const active = document.activeElement;
+            if (active && active.closest('.form-grid')) { e.preventDefault(); saveBtn.click(); }
+        }
+    });
+</script>
+
+</body>
+</html>
