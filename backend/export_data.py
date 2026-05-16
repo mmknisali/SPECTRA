@@ -53,6 +53,7 @@ def export_cleaned_data(df):
 
 def main():
     """Export all data"""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     print("Loading and processing data...")
     df, training, knowledge = load_and_process()
 

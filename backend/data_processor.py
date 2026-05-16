@@ -15,8 +15,10 @@ DATA_PATH = ROOT_DIR / "datamedx_veriset_26.xlsx"
 
 
 def load_dataset(path: str = None) -> pd.DataFrame:
-    """Load the Excel dataset"""
+    """Load dataset from Excel or CSV"""
     path = path or str(DATA_PATH)
+    if path.endswith('.csv'):
+        return pd.read_csv(path)
     return pd.read_excel(path)
 
 
