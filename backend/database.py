@@ -2,8 +2,11 @@
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text, Enum, JSON, ForeignKey, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.pool import QueuePool
 from datetime import datetime
 import os
+
+from backend.config_production import settings
 
 Base = declarative_base()
 
@@ -83,13 +86,18 @@ class LoginAttempt(Base):
     success = Column(Boolean, default=False)
     attempted_at = Column(DateTime, default=datetime.utcnow)
 
-# Database connection
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    f"mysql+pymysql://{os.getenv('DB_USER', 'spectra_user')}:{os.getenv('DB_PASSWORD', 'spectra_pass_2024')}@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '3306')}/{os.getenv('DB_NAME', 'spectra_db')}"
+# Database connection with production settings
+engine = create_engine(
+    settings.database_url,
+    poolclass=QueuePool,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
+    pool_recycle=settings.DB_POOL_RECYCLE,
+    pool_pre_ping=True,
+    echo=settings.DEBUG
 )
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():

@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPECTRA - Demo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        :root {
+            --bg: #0a0e17;
+            --surface: #111827;
+            --surface-light: #1f2937;
+            --border: #374151;
+            --primary: #3b82f6;
+            --primary-light: #60a5fa;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text: #f9fafb;
+            --text-muted: #9ca3af;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 20px;
+        }
+        .logo-text { font-size: 20px; font-weight: 700; }
+        .logo-text span { color: var(--primary-light); }
+        .status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+        .status-dot.loading { background: var(--warning); animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        
+        .main {
+            flex: 1;
+            padding: 24px;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        
+        /* Step Indicator */
+        .steps {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+        .step {
+            flex: 1;
+            padding: 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            text-align: center;
+            opacity: 0.5;
+            transition: all 0.3s;
+        }
+        .step.active { opacity: 1; border-color: var(--primary); background: rgba(59, 130, 246, 0.1); }
+        .step.completed { opacity: 1; border-color: var(--success); }
+        .step-num {
+            width: 28px;
+            height: 28px;
+            background: var(--border);
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+        .step.active .step-num { background: var(--primary); }
+        .step.completed .step-num { background: var(--success); }
+        .step-title { font-size: 12px; font-weight: 500; }
+        
+        /* Panels */
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+        .panel-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        /* Search */
+        .search-box {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .search-input {
+            flex: 1;
+            padding: 14px 18px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 16px;
+            outline: none;
+        }
+        .search-input:focus { border-color: var(--primary); }
+        .btn {
+            padding: 14px 24px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .btn:hover { background: var(--primary-light); transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-success { background: var(--success); }
+        .btn-success:hover { background: #059669; }
+        
+        /* Quick Select */
+        .quick-patients {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .patient-card {
+            background: var(--surface-light);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .patient-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+        .patient-card.selected {
+            border-color: var(--primary);
+            background: rgba(59, 130, 246, 0.1);
+        }
+        .patient-id { font-weight: 600; color: var(--primary-light); margin-bottom: 4px; }
+        .patient-meta { font-size: 13px; color: var(--text-muted); }
+        .patient-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: var(--bg);
+            border-radius: 4px;
+            font-size: 11px;
+            margin-top: 8px;
+        }
+        
+        /* Results */
+        .results-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        .result-card {
+            background: var(--surface-light);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .result-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        .risk-high { color: var(--danger); }
+        .risk-medium { color: var(--warning); }
+        .risk-low { color: var(--success); }
+        
+        .timeline {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .timeline-item {
+            padding: 12px;
+            border-left: 2px solid var(--border);
+            margin-left: 12px;
+            position: relative;
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -6px;
+            top: 16px;
+            width: 10px;
+            height: 10px;
+            background: var(--primary);
+            border-radius: 50%;
+        }
+        .timeline-date { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+        .timeline-content { font-size: 13px; }
+        
+        .loading-screen {
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 14, 23, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { margin-top: 24px; font-size: 16px; color: var(--text-muted); }
+        
+        .hidden { display: none !important; }
+        
+        @media (max-width: 900px) {
+            .results-grid { grid-template-columns: 1fr; }
+            .quick-patients { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">SPECTRA yükleniyor...</div>
+    </div>
+
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">S</div>
+            <div class="logo-text">SPECTRA <span>Demo</span></div>
+        </div>
+        <div class="status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Sistem Hazır</span>
+        </div>
+    </header>
+
+    <main class="main">
+        <!-- Steps -->
+        <div class="steps">
+            <div class="step active" id="step1">
+                <div class="step-num">1</div>
+                <div class="step-title">Hasta Seç</div>
+            </div>
+            <div class="step" id="step2">
+                <div class="step-num">2</div>
+                <div class="step-title">Geçmiş Gör</div>
+            </div>
+            <div class="step" id="step3">
+                <div class="step-num">3</div>
+                <div class="step-title">AI Analiz</div>
+            </div>
+        </div>
+
+        <!-- Step 1: Patient Selection -->
+        <div id="panelStep1">
+            <div class="panel">
+                <div class="panel-title"><i class="fas fa-search"></i> Hasta Ara</div>
+                <div class="search-box">
+                    <input type="text" class="search-input" id="searchInput" placeholder="Hasta ID veya isim girin... (örn: ADN_10016905)" autocomplete="off">
+                    <button class="btn" id="searchBtn" onclick="searchPatient()">
+                        <i class="fas fa-search"></i> Ara
+                    </button>
+                </div>
+                <div style="color: var(--text-muted); font-size: 13px; margin-top: 8px;">
+                    <i class="fas fa-bolt" style="color: var(--warning);"></i> 
+                    Hızlı erişim için hazır hastalar:
+                </div>
+            </div>
+
+            <div class="quick-patients" id="quickPatients">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- Step 2: Patient History -->
+        <div id="panelStep2" class="hidden">
+            <div class="panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <div class="panel-title" style="margin: 0;">
+                        <i class="fas fa-user-injured"></i> 
+                        <span id="selectedPatientName">Hasta Geçmişi</span>
+                    </div>
+                    <button class="btn" onclick="backToStep1()">
+                        <i class="fas fa-arrow-left"></i> Geri
+                    </button>
+                </div>
+                
+                <div class="results-grid">
+                    <div class="result-card">
+                        <div class="result-title">Hasta Özeti</div>
+                        <div id="patientSummary">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+                                <div><strong>ID:</strong> <span id="pId">-</span></div>
+                                <div><strong>Yaş:</strong> <span id="pAge">-</span></div>
+                                <div><strong>Cinsiyet:</strong> <span id="pGender">-</span></div>
+                                <div><strong>Kanser:</strong> <span id="pCancer">-</span></div>
+                                <div><strong>Evre:</strong> <span id="pStage">-</span></div>
+                                <div><strong>Durum:</strong> <span id="pStatus">-</span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="result-card">
+                        <div class="result-title">Tedavi Özeti</div>
+                        <div id="treatmentSummary" style="margin-top: 8px;">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 16px;">
+                    <div class="result-title">Son Ziyaretler</div>
+                    <div class="timeline" id="timeline">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <div style="margin-top: 24px; text-align: center;">
+                    <button class="btn btn-success" onclick="analyzePatient()" id="analyzeBtn">
+                        <i class="fas fa-brain"></i> SPECTRA AI Analizi Başlat
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: AI Analysis -->
+        <div id="panelStep3" class="hidden">
+            <div class="panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <div class="panel-title" style="margin: 0;">
+                        <i class="fas fa-brain"></i> SPECTRA AI Analizi
+                    </div>
+                    <button class="btn" onclick="backToStep2()">
+                        <i class="fas fa-arrow-left"></i> Geri
+                    </button>
+                </div>
+
+                <div class="results-grid">
+                    <div class="result-card">
+                        <div class="result-title">Risk Değerlendirmesi</div>
+                        <div id="riskResult" style="margin-top: 8px;">
+                            <div class="loading-spinner" style="width: 30px; height: 30px; border-width: 3px;"></div>
+                        </div>
+                    </div>
+                    <div class="result-card">
+                        <div class="result-title">ICD-10 Kodları</div>
+                        <div id="icdResult" style="margin-top: 8px;">
+                            <div class="loading-spinner" style="width: 30px; height: 30px; border-width: 3px;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="result-card" style="margin-top: 16px;">
+                    <div class="result-title">AI Önerileri</div>
+                    <div id="aiRecommendations" style="margin-top: 8px;">
+                        <div class="loading-spinner" style="width: 30px; height: 30px; border-width: 3px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+<script>
+const API_BASE = window.location.origin;
+let currentPatient = null;
+let patientHistory = null;
+
+// Pre-defined demo patients for instant access
+const DEMO_PATIENTS = [
+    { id: 'ADN_10016905', cancer: 'Meme Kanseri', stage: 'Evre IV', desc: 'Metastatik - multipl vizit', visits: 11 },
+    { id: 'ADN_10008413', cancer: 'Akciğer Kanseri', stage: 'Evre III', desc: 'Yeni tanı', visits: 3 },
+    { id: 'ADN_10006575', cancer: 'Kolon Kanseri', stage: 'Evre II', desc: 'Post-op takip', visits: 5 },
+];
+
+// Initialize
+window.onload = async () => {
+    renderQuickPatients();
+    await checkSystemHealth();
+    document.getElementById('loadingScreen').classList.add('hidden');
+};
+
+function renderQuickPatients() {
+    const container = document.getElementById('quickPatients');
+    container.innerHTML = DEMO_PATIENTS.map(p => `
+        <div class="patient-card" onclick="selectPatient('${p.id}')">
+            <div class="patient-id">${p.id}</div>
+            <div class="patient-meta">${p.cancer} • ${p.stage}</div>
+            <div class="patient-meta">${p.desc}</div>
+            <span class="patient-badge">${p.visits} Vizit</span>
+        </div>
+    `).join('');
+}
+
+async function checkSystemHealth() {
+    try {
+        const res = await fetch(`${API_BASE}/health`);
+        const data = await res.json();
+        document.getElementById('statusDot').style.background = data.status === 'healthy' ? 'var(--success)' : 'var(--danger)';
+    } catch {
+        document.getElementById('statusDot').style.background = 'var(--danger)';
+    }
+}
+
+async function searchPatient() {
+    const query = document.getElementById('searchInput').value.trim();
+    if (!query) return;
+    
+    // Direct select if exact match with demo patients
+    const exactMatch = DEMO_PATIENTS.find(p => p.id.toLowerCase() === query.toLowerCase());
+    if (exactMatch) {
+        selectPatient(exactMatch.id);
+        return;
+    }
+    
+    // Otherwise search via API
+    try {
+        document.getElementById('searchBtn').disabled = true;
+        document.getElementById('searchBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Aranıyor...';
+        
+        const res = await fetch(`${API_BASE}/patients/search?q=${encodeURIComponent(query)}&limit=5`);
+        const data = await res.json();
+        
+        if (data.patients && data.patients.length > 0) {
+            selectPatient(data.patients[0].patient_id);
+        } else {
+            alert('Hasta bulunamadı');
+        }
+    } catch (err) {
+        console.error(err);
+    } finally {
+        document.getElementById('searchBtn').disabled = false;
+        document.getElementById('searchBtn').innerHTML = '<i class="fas fa-search"></i> Ara';
+    }
+}
+
+async function selectPatient(patientId) {
+    currentPatient = patientId;
+    
+    // Show loading
+    document.getElementById('loadingScreen').classList.remove('hidden');
+    
+    try {
+        // Fetch patient data
+        const [historyRes, recsRes] = await Promise.all([
+            fetch(`${API_BASE}/patients/${patientId}/history`),
+            fetch(`${API_BASE}/patients/${patientId}/recommendations`)
+        ]);
+        
+        patientHistory = await historyRes.json();
+        const recommendations = await recsRes.json();
+        
+        if (patientHistory.success) {
+            showStep2(patientHistory, recommendations);
+        }
+    } catch (err) {
+        console.error('Error loading patient:', err);
+        alert('Hasta verisi yüklenirken hata oluştu');
+    } finally {
+        document.getElementById('loadingScreen').classList.add('hidden');
+    }
+}
+
+function showStep2(history, recommendations) {
+    // Update step indicator
+    document.getElementById('step1').classList.remove('active');
+    document.getElementById('step1').classList.add('completed');
+    document.getElementById('step2').classList.add('active');
+    
+    // Hide step 1, show step 2
+    document.getElementById('panelStep1').classList.add('hidden');
+    document.getElementById('panelStep2').classList.remove('hidden');
+    
+    const p = history.patient;
+    document.getElementById('selectedPatientName').textContent = `${p.id} - ${p.cancer || 'Kanser Tanısı'}`;
+    
+    // Fill patient summary
+    document.getElementById('pId').textContent = p.id;
+    document.getElementById('pAge').textContent = p.age || '-';
+    document.getElementById('pGender').textContent = p.gender || '-';
+    document.getElementById('pCancer').textContent = p.cancer_type || 'Belirlenmemiş';
+    document.getElementById('pStage').textContent = p.stage || '-';
+    document.getElementById('pStatus').textContent = p.status;
+    
+    // Fill treatment summary
+    const t = history.treatments;
+    document.getElementById('treatmentSummary').innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div style="background: var(--bg); padding: 8px; border-radius: 4px;">
+                <strong style="color: var(--primary-light);">${t.chemotherapy.length}</strong><br>
+                <small>Kemoterapi</small>
+            </div>
+            <div style="background: var(--bg); padding: 8px; border-radius: 4px;">
+                <strong style="color: var(--primary-light);">${t.radiotherapy.length}</strong><br>
+                <small>Radyoterapi</small>
+            </div>
+            <div style="background: var(--bg); padding: 8px; border-radius: 4px;">
+                <strong style="color: var(--primary-light);">${t.surgery.length}</strong><br>
+                <small>Cerrahi</small>
+            </div>
+            <div style="background: var(--bg); padding: 8px; border-radius: 4px;">
+                <strong style="color: var(--primary-light);">${history.visit_count}</strong><br>
+                <small>Toplam Vizit</small>
+            </div>
+        </div>
+    `;
+    
+    // Fill timeline
+    const timeline = history.timeline.slice(-5);
+    document.getElementById('timeline').innerHTML = timeline.map(item => `
+        <div class="timeline-item">
+            <div class="timeline-date">${item.date || 'Tarih belirsiz'}</div>
+            <div class="timeline-content">
+                <strong>${item.department || 'Klinik'}</strong><br>
+                ${item.procedure || 'Muayene'}<br>
+                <small style="color: var(--text-muted);">${item.notes ? item.notes.substring(0, 80) + '...' : ''}</small>
+            </div>
+        </div>
+    `).join('');
+}
+
+function backToStep1() {
+    document.getElementById('step2').classList.remove('active');
+    document.getElementById('step1').classList.remove('completed');
+    document.getElementById('step1').classList.add('active');
+    document.getElementById('panelStep2').classList.add('hidden');
+    document.getElementById('panelStep1').classList.remove('hidden');
+    currentPatient = null;
+}
+
+function backToStep2() {
+    document.getElementById('step3').classList.remove('active');
+    document.getElementById('step2').classList.add('active');
+    document.getElementById('panelStep3').classList.add('hidden');
+    document.getElementById('panelStep2').classList.remove('hidden');
+}
+
+async function analyzePatient() {
+    // Update steps
+    document.getElementById('step2').classList.remove('active');
+    document.getElementById('step2').classList.add('completed');
+    document.getElementById('step3').classList.add('active');
+    
+    // Switch panels
+    document.getElementById('panelStep2').classList.add('hidden');
+    document.getElementById('panelStep3').classList.remove('hidden');
+    
+    // Build clinical text from history
+    const p = patientHistory.patient;
+    const timeline = patientHistory.timeline;
+    const treatments = patientHistory.treatments;
+    
+    let clinicalText = `Hasta: ${p.id}\n`;
+    clinicalText += `Yaş: ${p.age}, Cinsiyet: ${p.gender}\n`;
+    clinicalText += `Tanı: ${p.cancer_type || 'Kanser'} ${p.stage ? '- ' + p.stage : ''}\n\n`;
+    clinicalText += `Öykü:\n`;
+    treatments.chemotherapy.slice(-3).forEach(t => {
+        clinicalText += `- Kemoterapi: ${t.name}\n`;
+    });
+    treatments.radiotherapy.slice(-2).forEach(t => {
+        clinicalText += `- Radyoterapi: ${t.name}\n`;
+    });
+    clinicalText += `\nSon Gelişme:\n`;
+    if (timeline.length > 0) {
+        const last = timeline[timeline.length - 1];
+        clinicalText += `${last.notes || last.procedure || 'Klinik değerlendirme'}\n`;
+    }
+    
+    // Run all 3 analyses in parallel
+    Promise.all([
+        fetch(`${API_BASE}/analyze/risk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clinical_text: clinicalText, lab_text: null })
+        }).then(r => r.json()),
+        
+        fetch(`${API_BASE}/predict/icd10`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clinical_note: clinicalText, cancer_type: p.cancer_type })
+        }).then(r => r.json())
+    ]).then(([riskData, icdData]) => {
+        // Display risk
+        const riskLevel = (riskData.risk_level || 'düşük').toLowerCase();
+        const riskColor = riskLevel === 'yüksek' ? 'risk-high' : (riskLevel === 'orta' ? 'risk-medium' : 'risk-low');
+        const riskIcon = riskLevel === 'yüksek' ? 'fa-exclamation-triangle' : (riskLevel === 'orta' ? 'fa-exclamation-circle' : 'fa-check-circle');
+        
+        document.getElementById('riskResult').innerHTML = `
+            <div style="font-size: 32px; margin-bottom: 8px;" class="${riskColor}">
+                <i class="fas ${riskIcon}"></i>
+            </div>
+            <div style="font-size: 20px; font-weight: 700; text-transform: uppercase;" class="${riskColor}">
+                ${riskLevel.toUpperCase()} RİSK
+            </div>
+            ${riskData.risk_factors ? `<div style="margin-top: 12px; font-size: 13px; color: var(--text-muted);">
+                ${riskData.risk_factors.map(f => `<div>• ${f}</div>`).join('')}
+            </div>` : ''}
+        `;
+        
+        // Display ICD-10
+        const codes = icdData.suggested_codes || [];
+        document.getElementById('icdResult').innerHTML = codes.length > 0 ? `
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                ${codes.slice(0, 5).map(c => `
+                    <div style="background: var(--bg); padding: 8px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong style="color: var(--primary-light);">${c.code}</strong><br>
+                            <small style="color: var(--text-muted);">${c.description || ''}</small>
+                        </div>
+                        <div style="background: var(--surface); padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                            ${(c.score * 100).toFixed(0)}%
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        ` : '<div style="color: var(--text-muted);">Kod bulunamadı</div>';
+        
+    }).catch(err => {
+        console.error('Analysis error:', err);
+        document.getElementById('riskResult').innerHTML = '<div style="color: var(--danger);">Analiz hatası</div>';
+        document.getElementById('icdResult').innerHTML = '<div style="color: var(--danger);">Analiz hatası</div>';
+    });
+    
+    // Get recommendations
+    fetch(`${API_BASE}/patients/${currentPatient}/recommendations`)
+        .then(r => r.json())
+        .then(recs => {
+            if (recs.recommendations) {
+                document.getElementById('aiRecommendations').innerHTML = recs.recommendations.map(r => `
+                    <div style="padding: 12px; background: var(--bg); border-left: 3px solid ${r.priority === 'critical' ? 'var(--danger)' : (r.priority === 'high' ? 'var(--warning)' : 'var(--success)')}; margin-bottom: 8px; border-radius: 4px;">
+                        <strong style="text-transform: uppercase; font-size: 11px; color: var(--text-muted);">${r.category}</strong><br>
+                        ${r.text}
+                    </div>
+                `).join('');
+            }
+        });
+}
+
+// Enter key to search
+document.getElementById('searchInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') searchPatient();
+});
+</script>
+</body>
+</html>
