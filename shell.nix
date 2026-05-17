@@ -2,9 +2,9 @@
 
 pkgs.mkShell {
   buildInputs = with pkgs; [
-    python311
-    python311Packages.pip
-    python311Packages.virtualenv
+    python312
+    python312Packages.pip
+    python312Packages.virtualenv
     gcc-unwrapped
     stdenv.cc.cc.lib
     git
@@ -21,7 +21,7 @@ pkgs.mkShell {
     # Create venv if needed
     if [ ! -d "venv" ]; then
       echo "Creating virtual environment..."
-      python3.11 -m venv venv
+      python3.12 -m venv venv
     fi
 
     # Activate venv

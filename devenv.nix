@@ -4,9 +4,9 @@
   packages = with pkgs; [
     git
     curl
-    python311
-    python311Packages.pip
-    python311Packages.virtualenv
+    python312
+    python312Packages.pip
+    python312Packages.virtualenv
     lsof
     cloudflared
   ];
