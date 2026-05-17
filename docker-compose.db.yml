@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: spectra_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-spectra_root_2024}
+      MYSQL_DATABASE: ${DB_NAME:-spectra_db}
+      MYSQL_USER: ${DB_USER:-spectra_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-spectra_pass_2024}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    networks:
+      - spectra_network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: spectra_phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: ${DB_USER:-spectra_user}
+      PMA_PASSWORD: ${DB_PASSWORD:-spectra_pass_2024}
+      PMA_ARBITRARY: 0
+    ports:
+      - "${PHPMYADMIN_PORT:-8080}:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - spectra_network
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  spectra_network:
+    driver: bridge

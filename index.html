@@ -1277,6 +1277,23 @@
                     </div>
                 </div>
 
+                <!-- Patient History Search Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-history"></i> Hasta Geçmişi Ara</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group" style="margin-bottom: 8px;">
+                            <label for="patientSearchInput"><i class="fas fa-search"></i> Hasta ID veya İsim</label>
+                            <input type="text" id="patientSearchInput" placeholder="Örn: ADN_10016905 veya 'Mehmet'">
+                        </div>
+                        <button class="btn btn-primary" id="patientSearchBtn" style="margin-bottom: 8px;">
+                            <i class="fas fa-search"></i> Ara
+                        </button>
+                        <div id="patientSearchResults" style="margin-top: 8px; max-height: 200px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-header">
                         <h3><i class="fas fa-clock"></i> Son Hastalar</h3>
@@ -1311,6 +1328,25 @@
 
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Patient History Viewer Modal -->
+    <div class="spectra-overlay" id="patientHistoryOverlay">
+        <div class="spectra-modal" style="width: min(95vw, 1000px);">
+            <div class="modal-header">
+                <div class="logo">
+                    <div class="logo-icon"><i class="fas fa-history"></i></div>
+                    <div>
+                        <div class="logo-text">Hasta<span>Geçmişi</span></div>
+                        <div class="subtitle">Tedavi Özeti ve Klinik Karar Destek</div>
+                    </div>
+                </div>
+                <button class="close-btn" id="patientHistoryCloseBtn"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body" id="patientHistoryContent">
+                <div class="loading"><div class="spinner"></div>Hasta geçmişi yükleniyor...</div>
+            </div>
+        </div>
+    </div>
 
     <!-- SPECTRA Popup Overlay -->
     <div class="spectra-overlay" id="spectraOverlay">
@@ -1946,6 +1982,215 @@
     showEmpty(tabIcd10);
     checkHealth();
     setInterval(checkHealth, 30000); // Check health every 30 seconds
+
+    // ============================================
+    // PATIENT HISTORY FEATURE
+    // ============================================
+    const patientSearchInput = document.getElementById('patientSearchInput');
+    const patientSearchBtn = document.getElementById('patientSearchBtn');
+    const patientSearchResults = document.getElementById('patientSearchResults');
+    const patientHistoryOverlay = document.getElementById('patientHistoryOverlay');
+    const patientHistoryCloseBtn = document.getElementById('patientHistoryCloseBtn');
+    const patientHistoryContent = document.getElementById('patientHistoryContent');
+
+    // Search patients
+    async function searchPatients() {
+        const query = patientSearchInput.value.trim();
+        if (!query || query.length < 2) {
+            showToast('En az 2 karakter girin', 'error');
+            return;
+        }
+
+        patientSearchBtn.disabled = true;
+        patientSearchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Aranıyor...';
+        patientSearchResults.innerHTML = '<div style="padding: 8px; color: var(--win-text-muted);">Aranıyor...</div>';
+
+        try {
+            const response = await fetch(`${API_BASE}/patients/search?q=${encodeURIComponent(query)}&limit=10`);
+            const data = await response.json();
+
+            if (data.success && data.patients.length > 0) {
+                renderPatientSearchResults(data.patients);
+            } else {
+                patientSearchResults.innerHTML = '<div style="padding: 8px; color: var(--win-text-muted);">Sonuç bulunamadı</div>';
+            }
+        } catch (error) {
+            patientSearchResults.innerHTML = '<div style="padding: 8px; color: #ff0000;">Arama hatası</div>';
+        }
+
+        patientSearchBtn.disabled = false;
+        patientSearchBtn.innerHTML = '<i class="fas fa-search"></i> Ara';
+    }
+
+    function renderPatientSearchResults(patients) {
+        let html = '<table style="width: 100%; font-size: 10px;">';
+        html += '<thead><tr><th>Hasta ID</th><th>Cinsiyet</th><th>Bölüm</th><th>Kayıt</th><th></th></tr></thead><tbody>';
+
+        patients.forEach(patient => {
+            html += `
+                <tr>
+                    <td><strong>${patient.patient_id}</strong></td>
+                    <td>${patient.gender || '-'}</td>
+                    <td>${patient.department || '-'}</td>
+                    <td>${patient.record_count}</td>
+                    <td><button class="btn btn-primary" onclick="viewPatientHistory('${patient.patient_id}')" style="font-size: 9px; padding: 2px 6px; height: 20px;"><i class="fas fa-eye"></i> Görüntüle</button></td>
+                </tr>
+            `;
+        });
+
+        html += '</tbody></table>';
+        patientSearchResults.innerHTML = html;
+    }
+
+    // View patient history (global function for onclick)
+    window.viewPatientHistory = async function(patientId) {
+        patientHistoryOverlay.classList.add('active');
+        patientHistoryContent.innerHTML = '<div class="loading"><div class="spinner"></div>Hasta geçmişi yükleniyor...</div>';
+
+        try {
+            // Fetch history and recommendations in parallel
+            const [historyRes, recsRes] = await Promise.all([
+                fetch(`${API_BASE}/patients/${patientId}/history`),
+                fetch(`${API_BASE}/patients/${patientId}/recommendations`)
+            ]);
+
+            const historyData = await historyRes.json();
+            const recsData = await recsRes.json();
+
+            if (historyRes.ok) {
+                renderPatientHistory(historyData, recsData);
+            } else {
+                patientHistoryContent.innerHTML = `<div class="error-box">${historyData.detail || 'Hasta bulunamadı'}</div>`;
+            }
+        } catch (error) {
+            patientHistoryContent.innerHTML = '<div class="error-box">Veri yüklenirken hata oluştu</div>';
+        }
+    };
+
+    function renderPatientHistory(history, recommendations) {
+        const patient = history.patient;
+        const treatments = history.treatments;
+        const timeline = history.timeline.slice(-10); // Last 10 events
+
+        let html = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                <div class="result-card" style="background: #e0e0ff;">
+                    <div class="card-label"><i class="fas fa-user"></i> Hasta Bilgisi</div>
+                    <div class="card-value">
+                        <strong>ID:</strong> ${patient.id}<br>
+                        <strong>Cinsiyet:</strong> ${patient.gender || '-'}<br>
+                        <strong>Yaş:</strong> ${patient.age || '-'}<br>
+                        <strong>Kanser:</strong> ${patient.cancer_type || 'Belirlenmemiş'}<br>
+                        <strong>Evre:</strong> ${patient.stage || '-'}<br>
+                        <strong>Durum:</strong> <span class="status-badge ${patient.status === 'Exitus' ? 'pending' : 'active'}">${patient.status}</span>
+                    </div>
+                </div>
+                <div class="result-card" style="background: #ffffcc;">
+                    <div class="card-label"><i class="fas fa-lightbulb"></i> SPECTRA Önerileri</div>
+                    <div class="card-value">
+                        ${recommendations.recommendations && recommendations.recommendations.length > 0
+                            ? recommendations.recommendations.map(r => `<div style="margin-bottom: 4px; padding: 4px; background: #fff; border: 1px solid #ccc;"><strong>[${r.priority.toUpperCase()}]</strong> ${r.text}</div>`).join('')
+                            : 'Öneri bulunmuyor'}
+                    </div>
+                </div>
+            </div>
+
+            <div class="result-card">
+                <div class="card-label"><i class="fas fa-pills"></i> Tedavi Özeti</div>
+                <div class="card-value">
+                    <strong>Kemoterapi:</strong> ${treatments.chemotherapy.length} seans<br>
+                    <strong>Radyoterapi:</strong> ${treatments.radiotherapy.length} seans<br>
+                    <strong>Cerrahi:</strong> ${treatments.surgery.length} işlem<br>
+                    <strong>İlaçlar:</strong> ${treatments.medications.slice(0, 5).join(', ')}${treatments.medications.length > 5 ? '...' : ''}
+                </div>
+            </div>
+
+            <div class="result-card">
+                <div class="card-label"><i class="fas fa-stream"></i> Zaman Çizelgesi (Son ${timeline.length} kayıt)</div>
+                <div class="card-value" style="max-height: 300px; overflow-y: auto;">
+                    <table style="width: 100%; font-size: 10px;">
+                        <thead>
+                            <tr style="background: var(--win-gray);">
+                                <th>Tarih</th>
+                                <th>Bölüm</th>
+                                <th>İşlem</th>
+                                <th>Notlar</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${timeline.map(event => `
+                                <tr>
+                                    <td>${event.date || '-'}</td>
+                                    <td>${event.department || '-'}</td>
+                                    <td>${event.procedure || '-'}</td>
+                                    <td title="${event.notes || ''}">${event.notes ? event.notes.substring(0, 50) + '...' : '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 8px;">
+                <button class="btn btn-spectra" onclick="loadPatientToForm('${patient.id}')">
+                    <i class="fas fa-user-md"></i> Bu Hasta ile SPECTRA Analizi Yap
+                </button>
+            </div>
+        `;
+
+        patientHistoryContent.innerHTML = html;
+    }
+
+    // Load patient data into form for analysis
+    window.loadPatientToForm = function(patientId) {
+        closePatientHistoryPopup();
+
+        // Fetch full history to populate form
+        fetch(`${API_BASE}/patients/${patientId}/history`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const patient = data.patient;
+                    const lastVisit = data.timeline[data.timeline.length - 1];
+
+                    // Populate form
+                    document.getElementById('dos').value = patient.id;
+                    document.getElementById('ad').value = 'Hasta'; // Generic since we don't have name
+                    document.getElementById('soyad').value = patient.id;
+                    document.getElementById('cins').value = patient.gender === 'Kadın' ? 'kadin' : (patient.gender === 'Erkek' ? 'erkek' : '');
+
+                    // Build clinical context from history
+                    let clinicalContext = `Hasta ID: ${patient.id}\n`;
+                    clinicalContext += `Yaş: ${patient.age || '-'}\n`;
+                    clinicalContext += `Cinsiyet: ${patient.gender || '-'}\n`;
+                    clinicalContext += `Kanser Tipi: ${patient.cancer_type || '-'}\n`;
+                    clinicalContext += `Evre: ${patient.stage || '-'}\n\n`;
+                    clinicalContext += `Önceki Tedaviler:\n`;
+                    data.treatments.chemotherapy.forEach(t => clinicalContext += `- Kemoterapi: ${t.name} (${t.date})\n`);
+                    data.treatments.radiotherapy.forEach(t => clinicalContext += `- Radyoterapi: ${t.name} (${t.date})\n`);
+                    data.treatments.surgery.forEach(t => clinicalContext += `- Cerrahi: ${t.name} (${t.date})\n`);
+                    clinicalContext += `\nSon Ziyaret Notları:\n${lastVisit ? lastVisit.notes : 'Kayıt yok'}`;
+
+                    document.getElementById('klinikNot').value = clinicalContext;
+
+                    showToast('Hasta bilgileri forma yüklendi', 'success');
+                }
+            });
+    };
+
+    function closePatientHistoryPopup() {
+        patientHistoryOverlay.classList.remove('active');
+    }
+
+    // Event listeners
+    patientSearchBtn.addEventListener('click', searchPatients);
+    patientSearchInput.addEventListener('keypress', e => {
+        if (e.key === 'Enter') searchPatients();
+    });
+    patientHistoryCloseBtn.addEventListener('click', closePatientHistoryPopup);
+    patientHistoryOverlay.addEventListener('click', e => {
+        if (e.target === patientHistoryOverlay) closePatientHistoryPopup();
+    });
 </script>
 
 </body>

@@ -45,6 +45,8 @@ from backend.rag_engine import (
     check_rag_system,
     get_treatment_recommendation,
 )
+from backend.routes.auth import router as auth_router
+from backend.routes.patients import router as patients_router
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -111,6 +113,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(auth_router)
+app.include_router(patients_router)
 
 
 # ---------------------------------------------------------------------------
