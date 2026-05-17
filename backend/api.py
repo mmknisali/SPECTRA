@@ -6,6 +6,7 @@ Provides endpoints for ICD-10 coding and treatment recommendations
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from pathlib import Path
@@ -21,7 +22,13 @@ logging.basicConfig(
 logger = logging.getLogger("spectra")
 
 # Import RAG engine
-from .rag_engine import get_treatment_recommendation, check_rag_system
+from .rag_engine import (
+    get_treatment_recommendation,
+    check_rag_system,
+    analyze_patient_summary,
+    analyze_risk_assessment,
+    index_patient_data
+)
 
 # Configure CORS - allow all for Cloudflare tunnel
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*")
@@ -70,7 +77,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+ROOT_DIR = Path(__file__).parent.parent
+DATA_DIR = ROOT_DIR / "data"
 
 # Knowledge base
 knowledge_base = []
@@ -114,9 +122,61 @@ class TreatmentResponse(BaseModel):
     source: str = "rag+llm"
 
 
+class AnalyzeSummaryRequest(BaseModel):
+    clinical_text: str = Field(..., max_length=MAX_CLINICAL_NOTE_LENGTH)
+    lab_text: Optional[str] = None
+
+
+class AnalyzeSummaryResponse(BaseModel):
+    cancer_type: str
+    stage: str
+    treatment_history: List[str]
+    current_medications: List[str]
+    key_findings: List[str]
+    performance_status: str
+    source: str
+
+
+class AnalyzeRiskRequest(BaseModel):
+    clinical_text: str = Field(..., max_length=MAX_CLINICAL_NOTE_LENGTH)
+    lab_text: Optional[str] = None
+
+
+class AnalyzeRiskResponse(BaseModel):
+    risk_level: str
+    risk_factors: List[str]
+    abnormal_labs: List[str]
+    metastasis_indicators: List[str]
+    recommendations: List[str]
+    source: str
+
+
 @app.get("/")
 async def root():
-    return {"message": "SPECTRA API - Oncology Assistant"}
+    """Serve the SPECTRA popup frontend"""
+    html_path = ROOT_DIR / "index.html"
+    if html_path.exists():
+        return FileResponse(str(html_path))
+    return {"message": "SPECTRA API - Oncology Assistant (frontend not found)"}
+
+
+@app.get("/api")
+async def api_info():
+    """API information"""
+    return {
+        "name": "SPECTRA API",
+        "version": "1.0.0",
+        "description": "Oncology Assistant - ICD-10 Coding, Patient Summary & Risk Assessment",
+        "endpoints": {
+            "GET /": "Frontend popup UI",
+            "GET /api": "API information",
+            "GET /health": "System status",
+            "POST /predict/icd10": "ICD-10 code prediction",
+            "POST /recommend/treatment": "Treatment recommendation",
+            "POST /analyze/summary": "Patient summary extraction",
+            "POST /analyze/risk": "Risk assessment",
+        }
+    }
 
 
 def check_ollama() -> dict:
@@ -232,6 +292,53 @@ async def recommend_treatment(request: TreatmentRequest):
     except Exception as e:
         logger.error(f"Treatment recommendation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Treatment recommendation failed: {str(e)}")
+
+
+@app.post("/analyze/summary", response_model=AnalyzeSummaryResponse)
+async def analyze_summary(request: AnalyzeSummaryRequest):
+    """Extract structured patient summary from clinical text"""
+    try:
+        logger.info(f"Analyze summary request ({len(request.clinical_text)} chars)")
+        result = analyze_patient_summary(
+            clinical_text=request.clinical_text,
+            lab_text=request.lab_text or ""
+        )
+
+        return AnalyzeSummaryResponse(
+            cancer_type=result.get("cancer_type", "Belirlenemedi"),
+            stage=result.get("stage", "Belirtilmemiş"),
+            treatment_history=result.get("treatment_history", []),
+            current_medications=result.get("current_medications", []),
+            key_findings=result.get("key_findings", []),
+            performance_status=result.get("performance_status", "Belirtilmemiş"),
+            source=result.get("source", "fallback")
+        )
+    except Exception as e:
+        logger.error(f"Summary analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Summary analysis failed: {str(e)}")
+
+
+@app.post("/analyze/risk", response_model=AnalyzeRiskResponse)
+async def analyze_risk(request: AnalyzeRiskRequest):
+    """Generate risk assessment from clinical text"""
+    try:
+        logger.info(f"Analyze risk request ({len(request.clinical_text)} chars)")
+        result = analyze_risk_assessment(
+            clinical_text=request.clinical_text,
+            lab_text=request.lab_text or ""
+        )
+
+        return AnalyzeRiskResponse(
+            risk_level=result.get("risk_level", "düşük"),
+            risk_factors=result.get("risk_factors", []),
+            abnormal_labs=result.get("abnormal_labs", []),
+            metastasis_indicators=result.get("metastasis_indicators", []),
+            recommendations=result.get("recommendations", []),
+            source=result.get("source", "fallback")
+        )
+    except Exception as e:
+        logger.error(f"Risk analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Risk analysis failed: {str(e)}")
 
 
 if __name__ == "__main__":

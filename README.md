@@ -8,15 +8,28 @@ AI-powered oncology decision support for Turkish healthcare professionals.
 
 ## Features
 
-### 1. ICD-10 Code Generator
+### 1. Clinical Decision Popup (3-Tab Interface)
+Served directly from FastAPI at `GET /` — an overlay HTML popup designed to run inside a doctor's HBYS (Hospital Information System):
+
+- **Risk Report** — Risk level assessment (düşük/orta/yüksek), risk factors, abnormal lab values, metastasis indicators, and clinical recommendations
+- **Patient Summary** — Cancer type, stage, treatment history, current medications, key findings, and performance status
+- **ICD-10 Codes** — Score-ranked ICD-10 code suggestions based on clinical note keywords and cancer type matching
+
+### 2. ICD-10 Code Generator
 - Generate ICD-10 diagnostic codes from clinical notes in Turkish
-- 20+ codes in knowledge base covering major cancer types
-- Supports: Karaciğer kanseri, Meme Kanseri, Multipl miyelom, Over kanseri, Prostat kanseri
+- 100+ codes in knowledge base covering major cancer types
 - Score-based matching using cancer type + clinical note keywords
 
-### 2. Treatment Recommender
-- Evidence-based treatment protocols from historical patient data
+### 3. Patient Summary & Risk Assessment
+- Structured patient summary extraction from free-text clinical notes
+- Risk level classification with flagged abnormal lab values
+- Metastasis indicator detection from clinical text
 - RAG (Retrieval-Augmented Generation) using ChromaDB + Ollama LLM
+- Rule-based fallback when LLM unavailable
+
+### 4. Treatment Recommender
+- Evidence-based treatment protocols from historical patient data
+- RAG using ChromaDB + Ollama LLM
 - Fallback to hardcoded protocols when LLM unavailable
 - Optional lab value integration for personalized recommendations
 - All responses in Turkish with localized drug names
@@ -30,8 +43,7 @@ AI-powered oncology decision support for Turkish healthcare professionals.
 | Language | Python 3.11+ |
 | RAG | ChromaDB (vector database) |
 | LLM | Ollama + Qwen2:7b-instruct-q5_K_M |
-| API | FastAPI (uvicorn) |
-| UI | Streamlit |
+| API + Frontend | FastAPI (serves HTML popup) |
 | Data | Pandas, OpenPyXL |
 
 ---
@@ -53,24 +65,22 @@ pip install -r requirements.txt
 curl -fsSL https://ollama.ai/install.sh | sh
 ollama pull qwen2:7b-instruct-q5_K_M
 
-# 3. Export data from source Excel (creates knowledge_base.json)
+# 3. Export data from CSV (creates knowledge_base.json + ChromaDB index)
 python -m backend.export_data
 
-# 4. Start services (run in separate terminals)
-python -m backend.api          # API on http://localhost:8000
-streamlit run frontend/app.py  # UI on http://localhost:8501
+# 4. Start the API (single process — serves frontend + backend)
+python -m backend.api          # http://localhost:8000
 ```
 
 ### First Time Setup
-The first time you run, you'll need to export the data:
 ```bash
 python -m backend.export_data
 ```
 
-This creates three files in `data/`:
-- `knowledge_base.json` - ICD-10 code mappings (required for API)
-- `training_data.json` - Q&A training pairs
-- `cleaned_patients.csv` - Processed patient records
+This creates:
+- `data/knowledge_base.json` — ICD-10 code mappings (required for API)
+- `data/training_data.json` — Q&A training pairs
+- `data/chroma/` — ChromaDB vector index for RAG
 
 ---
 
@@ -79,15 +89,15 @@ This creates three files in `data/`:
 ```
 SPECTRA/
 ├── backend/
-│   ├── api.py              # FastAPI entry point
-│   ├── rag_engine.py       # RAG + LLM integration
-│   ├── data_processor.py   # Data loading and cleaning
-│   ├── export_data.py      # Generate KB from Excel
+│   ├── api.py              # FastAPI entry point (serves index.html + API endpoints)
+│   ├── rag_engine.py       # RAG + LLM integration (summary, risk, treatment)
+│   ├── data_processor.py   # Data loading and cleaning (CSV pipeline)
+│   ├── export_data.py      # Generate KB + index ChromaDB
 │   └── cancer_classifier.py # ML cancer type classifier
-├── frontend/
-│   └── app.py              # Streamlit UI
+├── index.html              # Frontend popup UI (served by FastAPI at GET /)
 ├── data/
 │   ├── knowledge_base.json # ICD-10 codes (generated)
+│   ├── training_data.json  # Q&A training pairs (generated)
 │   └── chroma/             # ChromaDB vectors (generated)
 ├── docs/
 │   ├── api.md              # API documentation
@@ -96,6 +106,7 @@ SPECTRA/
 ├── models/                 # Trained ML models
 │   ├── cancer_classifier.joblib
 │   └── lora_adapter/       # Fine-tuned LLM adapter
+├── hackathon_veri.csv      # Source data (365K rows, 31 columns)
 ├── requirements.txt
 └── README.md
 ```
@@ -106,10 +117,13 @@ SPECTRA/
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/` | GET | API info |
+| `/` | GET | Serves the SPECTRA popup frontend (`index.html`) |
+| `/api` | GET | API information |
 | `/health` | GET | System health (KB, Chroma, Ollama) |
-| `/predict/icd10` | POST | Generate ICD-10 codes |
+| `/predict/icd10` | POST | Generate ICD-10 codes from clinical notes |
 | `/recommend/treatment` | POST | Get treatment recommendations |
+| `/analyze/summary` | POST | Extract structured patient summary |
+| `/analyze/risk` | POST | Generate risk assessment |
 | `/docs` | GET | Swagger/OpenAPI documentation |
 
 See [docs/api.md](docs/api.md) for full API reference.
@@ -125,7 +139,6 @@ Environment variables (all optional with sensible defaults):
 | `OLLAMA_HOST` | http://localhost:11434 | Ollama API URL |
 | `OLLAMA_MODEL` | qwen2:7b-instruct-q5_K_M | Model name |
 | `ALLOWED_ORIGINS` | * | CORS origins |
-| `API_BASE_URL` | http://localhost:8000 | Frontend → API URL |
 
 Create `.env` file for local overrides (see `.env.example`).
 
@@ -156,12 +169,33 @@ curl -X POST http://localhost:8000/recommend/treatment \
   }'
 ```
 
+### Patient Summary Extraction
+```bash
+curl -X POST http://localhost:8000/analyze/summary \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clinical_text": "65 yasinda meme kanseri hastasi, opere, 4 kür kemoterapi almis",
+    "lab_text": "AST: 35, ALT: 28, CRP: 3"
+  }'
+```
+
+### Risk Assessment
+```bash
+curl -X POST http://localhost:8000/analyze/risk \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clinical_text": "Ileri evre over kanseri, karaciger metastazi mevcut",
+    "lab_text": "CA-125: 350, AST: 85, ALT: 92"
+  }'
+```
+
 ---
 
 ## Running Without Ollama
 
 The API starts without Ollama and uses fallback protocols:
 - ICD-10 generation works from knowledge base
+- Patient summary and risk assessment use rule-based fallback
 - Treatment recommendations use hardcoded Turkish protocols
 - System logs warnings but remains functional
 
@@ -171,20 +205,19 @@ To run without LLM, simply skip the Ollama setup step.
 
 ## Documentation
 
-- [API Reference](docs/api.md) - Complete endpoint documentation
-- [Development Guide](docs/development.md) - Setup, debugging, and contributing
-- [Deployment Guide](docs/deployment.md) - Production deployment options
+- [API Reference](docs/api.md) — Complete endpoint documentation
+- [Development Guide](docs/development.md) — Setup, debugging, and contributing
+- [Deployment Guide](docs/deployment.md) — Production deployment options
 
 ---
 
 ## Data Pipeline
 
-1. **Source**: `datamedx_veriset_26.xlsx` (raw patient data)
+1. **Source**: `hackathon_veri.csv` (365K rows, 31 columns — patient records from Turkish healthcare)
 2. **Processing**: `backend/export_data.py` exports:
-   - ICD-10 knowledge base
-   - Training pairs for fine-tuning
-   - Cleaned patient records
-3. **Vector Store**: ChromaDB indexes patient records for RAG
+   - ICD-10 knowledge base (`knowledge_base.json`)
+   - Training pairs for fine-tuning (`training_data.json`)
+3. **Vector Store**: ChromaDB indexed during export (`python -m backend.export_data`), not at runtime
 4. **Knowledge Base**: JSON file loaded at API startup
 
 ---
@@ -192,17 +225,30 @@ To run without LLM, simply skip the Ollama setup step.
 ## System Architecture
 
 ```
-User → Streamlit UI (8501) → FastAPI (8000) → ChromaDB (vectors)
-                                      ↓
-                              Ollama (optional)
-                              Fallback (always)
+Doctor's HBYS Website
+        │
+        ▼ (iframe / popup overlay)
+┌────────────────────────────────┐
+│    SPECTRA Popup (index.html)  │
+│  ┌─────────┬────────┬────────┐ │
+│  │ Risk    │Patient │ ICD-10 │ │
+│  │ Report  │Summary │ Codes  │ │
+│  └─────────┴────────┴────────┘ │
+└──────────────┬─────────────────┘
+               │ POST /analyze/risk, /analyze/summary, /predict/icd10
+               ▼
+        FastAPI (port 8000)
+         ┌──────┴──────┐
+         │              │
+    ChromaDB         Ollama (optional)
+   (vectors)        Fallback (always)
 ```
 
-- Frontend polls `/health` endpoint for connection status
-- API loads knowledge base at startup
-- RAG queries ChromaDB for similar patients
-- If Ollama available → LLM generates response
-- If Ollama unavailable → fallback protocols used
+- Frontend auto-detects API URL via `window.location.origin` (no `API_BASE_URL` needed)
+- API loads knowledge base and checks ChromaDB at startup
+- RAG queries ChromaDB for similar patients to enrich LLM context
+- If Ollama available → LLM generates structured responses
+- If Ollama unavailable → rule-based fallback used for all features
 
 ---
 
@@ -218,4 +264,4 @@ See [docs/development.md](docs/development.md) for:
 
 ## License
 
-MIT License - See LICENSE file
+MIT License — See LICENSE file

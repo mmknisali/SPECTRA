@@ -1,6 +1,7 @@
 # SPECTRA - Agent Guide
 
-Oncology assistant (ICD-10 coding + treatment recommendations) for Turkish healthcare. Python 3.11+ project using FastAPI + Streamlit + ChromaDB + Ollama.
+Clinical decision helper (Risk Report + Patient Summary + ICD-10 Coding) for Turkish healthcare.
+Popup/overlay frontend served by FastAPI. Uses ChromaDB + Ollama for RAG-based analysis.
 
 ## Quick Start
 
@@ -12,31 +13,32 @@ pip install -r requirements.txt
 curl -fsSL https://ollama.ai/install.sh | sh
 ollama pull qwen2:7b-instruct-q5_K_M
 
-# 3. Generate data (required - data/ is .gitignored)
+# 3. Generate data + index ChromaDB (required - data/ is .gitignored)
 python -m backend.export_data
 
-# 4. Run API (terminal 1)
-python -m backend.api                    # Port 8000
-# or with auto-reload during development:
+# 4. Run (single process — serves frontend + API)
+python -m backend.api                    # Port 8000 — frontend at http://localhost:8000
+# or with auto-reload:
 uvicorn backend.api:app --reload --port 8000
-
-# 5. Run frontend (terminal 2)
-streamlit run frontend/app.py            # Port 8501
 ```
 
 ## Architecture
 
 ```
-Streamlit (8501) ──→ FastAPI (8000) ──→ ChromaDB (vector index)
-                              │
-                      Ollama (optional)
-                      Fallback (always available)
+Doctor's HBYS website (e.g. Pusula)
+        └── SPECTRA popup overlay (index.html served by FastAPI at GET /)
+                │
+                └── FastAPI (8000)
+                      ├── POST /predict/icd10      ← ICD-10 code matching
+                      ├── POST /analyze/summary     ← RAG + LLM patient summary
+                      ├── POST /analyze/risk        ← RAG + LLM risk assessment
+                      └── POST /recommend/treatment ← fallback protocols
 ```
 
-- API starts without Ollama; treatment falls back to hardcoded Turkish protocols
-- ICD-10 prediction is entirely knowledge-base-driven (no LLM needed)
-- Frontend polls `/health` to show connection status in sidebar
+- Single process: `python -m backend.api` serves both frontend HTML and API endpoints
+- No Streamlit, no separate frontend server
 - CORS allows all origins by default (`ALLOWED_ORIGINS=*`)
+- All analysis has RAG+LLM (Ollama) and fallback (rule-based) paths
 
 ## PYTHONPATH Requirement
 
@@ -96,9 +98,9 @@ Note: `data/cleaned_patients.csv` would be created if `export_cleaned_data()` we
 
 ## ChromaDB Timing
 
-`data/chroma/` is **not** created by `export_data.py`. ChromaDB rebuilds its persistent index at API runtime when the first query hits `check_rag_system()` or `get_treatment_recommendation()`. The `/health` endpoint triggers this at startup.
+`data/chroma/` is created by `export_data.py` at export time (via `index_patient_data()` in `rag_engine.py`). The `/health` endpoint checks it at startup.
 
-Clear `data/chroma/` to force a rebuild.
+Clear `data/chroma/` and re-run `export_data.py` to force a rebuild.
 
 ## Testing
 
@@ -122,6 +124,8 @@ curl -X POST http://localhost:8000/recommend/treatment \
 | `/health` | GET | System status (KB loaded, Chroma ready, Ollama available) |
 | `/predict/icd10` | POST | ICD-10 codes from clinical notes |
 | `/recommend/treatment` | POST | Treatment recommendations (RAG+LLM or fallback) |
+| `/analyze/summary` | POST | Patient summary from clinical text (RAG+LLM or fallback) |
+| `/analyze/risk` | POST | Risk assessment from clinical text + labs (RAG+LLM or fallback) |
 | `/docs` | GET | Swagger UI |
 | `/redoc` | GET | ReDoc UI |
 
@@ -147,13 +151,14 @@ To add a new cancer type, edit **all three** files and regenerate.
 ## Data Pipeline
 
 ```
-datamedx_veriset_26.xlsx (raw Excel, must exist at project root)
+hackathon_veri.csv (raw CSV, 365K rows, 31 columns — must exist at project root)
     ↓
-backend/data_processor.py — load, clean, extract ICD-10 codes, lab values, drugs
+backend/data_processor.py — load, clean, extract cancer types from text, lab values, drugs
     ↓
 backend/export_data.py
     ├── data/knowledge_base.json    — ICD-10 code → cancer_type mappings
-    └── data/training_data.json     — Q&A pairs for LoRA fine-tuning
+    ├── data/training_data.json     — Q&A pairs for LoRA fine-tuning
+    └── data/chroma/                — Vector database (indexed by index_patient_data())
 Note: `export_cleaned_data()` exists but is NOT called from `main()`.
 ```
 
@@ -205,11 +210,12 @@ Variables are loaded via `python-dotenv` in `rag_engine.py`. Copy `.env.example`
 | `backend/data_processor.py` | Excel loading, cleaning, ICD-10 extraction, training pair creation |
 | `backend/export_data.py` | CLI entrypoint to generate all data files from Excel |
 | `backend/cancer_classifier.py` | XGBoost model training (separate feature) |
-| `frontend/app.py` | Streamlit UI, dark theme, two-tab layout |
+| `frontend/app.py` | Streamlit UI, dark theme, two-tab layout (removed — use index.html instead) |
+| `index.html` | Popup overlay frontend (served by FastAPI at GET /) |
 | `train.py` | LoRA fine-tuning script for Qwen2 (separate entrypoint) |
 | `data/knowledge_base.json` | ICD-10 mappings (required at API startup) |
 | `data/chroma/` | ChromaDB persistent vector index (created at runtime) |
-| `datamedx_veriset_26.xlsx` | Source data — must exist at repo root for export |
+| `hackathon_veri.csv` | Source data — must exist at repo root for export (365K rows, 31 cols) |
 | `docs/api.md` | Full API documentation |
 | `docs/development.md` | Development guide with debugging tips |
 | `docs/deployment.md` | Docker, cloud, and production deployment |
@@ -268,5 +274,5 @@ Forgot to set `PYTHONPATH`:
 export PYTHONPATH="$PWD"
 ```
 
-### Source Excel not found
-`datamedx_veriset_26.xlsx` must exist at the project root. It is **not** gitignored and should be present in the repo.
+### Source CSV not found
+`hackathon_veri.csv` must exist at the project root (114MB, 365K rows). It is **gitignored** — you must obtain it separately.

@@ -15,20 +15,20 @@ pip install -r requirements.txt
 pip install pytest black flake8 mypy
 ```
 
-### 2. Data Export (Required)
+### 2. Data Export + ChromaDB Indexing (Required)
 ```bash
-# Generate knowledge base and training data
+# Generate knowledge base, training data, and index ChromaDB
 python -m backend.export_data
 ```
 
 This creates:
 - `data/knowledge_base.json` - ICD-10 mappings
 - `data/training_data.json` - Training pairs
-- `data/cleaned_patients.csv` - Processed data
+- `data/chroma/` - ChromaDB vector index for RAG
 
-### 3. Start Development Servers
+### 3. Start Development Server
 
-Terminal 1 - API:
+Single terminal:
 ```bash
 # With auto-reload
 python -m backend.api
@@ -36,13 +36,8 @@ python -m backend.api
 uvicorn backend.api:app --reload --port 8000
 ```
 
-Terminal 2 - Frontend:
-```bash
-streamlit run frontend/app.py
-```
-
 Access:
-- Frontend: http://localhost:8501
+- Frontend UI: http://localhost:8000
 - API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
 
@@ -55,30 +50,36 @@ Access:
 | File | Purpose |
 |------|---------|
 | `api.py` | FastAPI routes, request/response models, health checks |
-| `rag_engine.py` | ChromaDB queries, Ollama integration, fallback protocols |
-| `data_processor.py` | Excel loading, cleaning, ICD-10 extraction |
-| `export_data.py` | Export processed data to JSON/CSV |
+| `rag_engine.py` | ChromaDB queries, Ollama integration, fallback protocols, patient summary & risk analysis |
+| `data_processor.py` | CSV loading, cleaning, ICD-10 extraction, cancer type mapping |
+| `export_data.py` | Export processed data to JSON/CSV + ChromaDB indexing |
 | `cancer_classifier.py` | ML model for cancer type prediction |
 
-### Frontend (`frontend/`)
+### Frontend
 
 | File | Purpose |
 |------|---------|
-| `app.py` | Streamlit UI, API client, styling |
+| `index.html` | Single-page popup UI served from FastAPI at `GET /` |
 
-### Data Flow
+---
+
+## Data Flow
 
 ```
-Excel (.xlsx)
+hackathon_veri.csv
     ↓
-data_processor.py (cleaning)
+data_processor.py (cleaning, ICD-10 extraction)
     ↓
 export_data.py
     ├──→ knowledge_base.json
     ├──→ training_data.json
-    └──→ cleaned_patients.csv
+    └──→ chroma/ (vector index for RAG)
     ↓
-ChromaDB (vector index created at runtime)
+FastAPI runtime:
+    ├── /predict/icd10  →  knowledge_base.json
+    ├── /recommend/treatment  →  ChromaDB + Ollama / fallback
+    ├── /analyze/summary  →  ChromaDB + Ollama / fallback
+    └── /analyze/risk  →  ChromaDB + Ollama / fallback
 ```
 
 ---
@@ -145,16 +146,15 @@ def get_fallback_recommendation(cancer_type: str) -> Dict[str, Any]:
     }
 ```
 
-### 3. Update Frontend List
-Edit `frontend/app.py`:
+### 3. Update Cancer Type List
+Edit `backend/data_processor.py`:
 ```python
-CANCER_TYPES = [
-    "Karaciğer kanseri",
-    "Meme Kanseri",
-    "Kolon kanseri",  # Add here
-    # ...
+CANCER_KEYWORDS = [
+    ...
+    (["kolon kanseri", ...], "Kolon kanseri"),  # Add here
 ]
 ```
+Edit `index.html` to add the new type to the UI dropdown if present.
 
 ### 4. Regenerate Data
 ```bash
@@ -180,14 +180,17 @@ curl -v http://localhost:8000/health
 # Check ChromaDB status
 python -c "from backend.rag_engine import check_rag_system; print(check_rag_system())"
 
-# Query similar patients
+# Query similar patients by cancer type
 python -c "from backend.rag_engine import query_similar_patients; print(query_similar_patients('meme kanseri'))"
+
+# Query similar patients by clinical text
+python -c "from backend.rag_engine import query_similar_patients_by_text; print(query_similar_patients_by_text('meme kanseri kemoterapi alan hasta'))"
 ```
 
 ### Frontend Debugging
 ```bash
-# Run with detailed errors
-streamlit run frontend/app.py --logger.level=debug
+# Frontend is served by FastAPI — check the browser's dev console or reload
+# Static file: ROOT_DIR / index.html
 ```
 
 ---
@@ -205,9 +208,14 @@ python -m backend.export_data
 ### Issue: ChromaDB not ready
 **Error**: `ChromaDB client not available`
 
-**Fix**: Check `data/chroma/` directory exists and is writable:
+**Fix**: Run export_data to index ChromaDB:
 ```bash
-mkdir -p data/chroma
+python -m backend.export_data
+```
+For a fresh rebuild, clear and re-index:
+```bash
+rm -rf data/chroma
+python -m backend.export_data
 ```
 
 ### Issue: Ollama connection failed
@@ -239,6 +247,16 @@ curl -X POST http://localhost:8000/predict/icd10 \
 curl -X POST http://localhost:8000/recommend/treatment \
   -H "Content-Type: application/json" \
   -d '{"cancer_type": "meme kanseri"}'
+
+# Patient summary analysis
+curl -X POST http://localhost:8000/analyze/summary \
+  -H "Content-Type: application/json" \
+  -d '{"clinical_text": "60 yasinda meme kanseri hastasi, opere, kemoterapi aliyor"}'
+
+# Risk assessment
+curl -X POST http://localhost:8000/analyze/risk \
+  -H "Content-Type: application/json" \
+  -d '{"clinical_text": "Metastatik meme kanseri, karaciger metastazi", "lab_text": "AST: 120, ALT: 95"}'
 ```
 
 ### Load Testing
@@ -259,9 +277,6 @@ OLLAMA_MODEL=qwen2:7b-instruct-q5_K_M
 
 # CORS (for local dev)
 ALLOWED_ORIGINS=*
-
-# Frontend API URL
-API_BASE_URL=http://localhost:8000
 ```
 
 Load with:
@@ -275,17 +290,17 @@ load_dotenv()
 ## Performance Optimization
 
 ### ChromaDB
-- Index is created on first query (slow)
+- Index is created once by `export_data.py` (not at runtime)
 - Subsequent queries are fast
-- Clear `data/chroma/` to rebuild
+- Clear `data/chroma/` and re-run `export_data.py` to rebuild
 
 ### API
 - Knowledge base loaded once at startup
 - Use `uvicorn --workers 4` for multi-process
 
 ### Frontend
-- API calls cached in session state
-- Health check polled every 5 seconds
+- Static `index.html` served directly by FastAPI
+- No additional frontend server needed
 
 ---
 
@@ -294,31 +309,33 @@ load_dotenv()
 ### New API Endpoint
 1. Add Pydantic models in `api.py`
 2. Implement route handler
-3. Add to `lifespan` if initialization needed
-4. Update `docs/api.md`
+3. If RAG-based: add function in `rag_engine.py`
+4. If Ollama-based: add system prompt in `rag_engine.py`
+5. Update `docs/api.md`
 
 ### New Data Processing
 1. Add cleaning logic in `data_processor.py`
 2. Export in `export_data.py`
-3. Regenerate data files
+3. Regenerate data files + ChromaDB
 4. Test with `python -m backend.export_data`
 
 ### New UI Component
-1. Add to `frontend/app.py`
-2. Create API client function
-3. Add error handling
-4. Test both tabs work
+1. Edit `index.html`
+2. Add API call to relevant endpoint
+3. Add error handling in the JavaScript
+4. Test in browser
 
 ---
 
 ## Deployment Checklist
 
 Before deploying:
-- [ ] Run `export_data.py` to generate KB
+- [ ] Run `export_data.py` to generate KB + ChromaDB
 - [ ] Verify `data/chroma/` exists
 - [ ] Test `/health` endpoint
 - [ ] Test ICD-10 prediction
 - [ ] Test treatment recommendation
+- [ ] Test `/analyze/summary` and `/analyze/risk`
 - [ ] Verify Ollama or accept fallback
 - [ ] Set production `ALLOWED_ORIGINS`
 - [ ] Configure logging

@@ -1,12 +1,13 @@
 """
-Export processed data for training and knowledge base
-Run this script to generate training data files
+Export processed data for training, knowledge base, and ChromaDB indexing
+Run this script to generate all data files
 """
 
 import json
 import pandas as pd
 from pathlib import Path
 from .data_processor import load_and_process, process_patient
+from .rag_engine import index_patient_data
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 OUTPUT_DIR = DATA_DIR
@@ -51,6 +52,13 @@ def export_cleaned_data(df):
     return output_path
 
 
+def index_chromadb(df):
+    """Index patient data into ChromaDB for RAG"""
+    print("\nIndexing ChromaDB (for RAG-based analysis)...")
+    count = index_patient_data(df)
+    print(f"  Indexed {count} patient documents")
+
+
 def main():
     """Export all data"""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -61,9 +69,13 @@ def main():
     export_training_data(training)
     export_knowledge_base(knowledge)
 
+    print("\nIndexing vector database...")
+    index_chromadb(df)
+
     print("\nDone! Files created in data/ directory:")
     print("  - training_data.json")
     print("  - knowledge_base.json")
+    print("  - chroma/ (vector database for RAG)")
 
 
 if __name__ == "__main__":

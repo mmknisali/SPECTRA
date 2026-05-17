@@ -23,16 +23,13 @@ pip install -r requirements.txt
 # 2. Export data
 python -m backend.export_data
 
-# 3. Start API (Terminal 1)
+# 3. Start API (serves frontend + API on same port)
 python -m backend.api
-
-# 4. Start Frontend (Terminal 2)
-streamlit run frontend/app.py
 ```
 
 **Access:**
-- Frontend: http://localhost:8501
-- API: http://localhost:8000
+- Application (frontend + API): http://localhost:8000
+- API docs: http://localhost:8000/docs
 
 ---
 
@@ -61,11 +58,11 @@ COPY . .
 # Export data
 RUN python -m backend.export_data
 
-# Expose ports
-EXPOSE 8000 8501
+# Expose port
+EXPOSE 8000
 
-# Start both services
-CMD sh -c "python -m backend.api & streamlit run frontend/app.py --server.port 8501"
+# Start the API (serves frontend + API)
+CMD ["python", "-m", "backend.api"]
 ```
 
 **Build and Run:**
@@ -74,7 +71,7 @@ CMD sh -c "python -m backend.api & streamlit run frontend/app.py --server.port 8
 docker build -t spectra-oncology .
 
 # Run container
-docker run -p 8000:8000 -p 8501:8501 spectra-oncology
+docker run -p 8000:8000 spectra-oncology
 ```
 
 **With Docker Compose:**
@@ -95,16 +92,6 @@ services:
     depends_on:
       - ollama
 
-  frontend:
-    build: .
-    command: streamlit run frontend/app.py --server.port 8501
-    ports:
-      - "8501:8501"
-    environment:
-      - API_BASE_URL=http://api:8000
-    depends_on:
-      - api
-
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -122,7 +109,7 @@ volumes:
   ollama:
 ```
 
-Run with: `docker-compose up`
+Run with: `docker compose up`
 
 ---
 
@@ -156,12 +143,10 @@ ollama serve &
 
 # 7. Start application
 python -m backend.api &
-streamlit run frontend/app.py &
 ```
 
 **Security Group Rules:**
-- Port 8000 (API)
-- Port 8501 (Frontend)
+- Port 8000 (Application — serves frontend + API)
 - Port 22 (SSH)
 
 #### Google Cloud Run
@@ -178,14 +163,13 @@ steps:
     args: ['run', 'deploy', 'spectra', '--image', 'gcr.io/$PROJECT_ID/spectra', '--platform', 'managed']
 ```
 
-**Note:** Cloud Run is stateless - ChromaDB won't persist. Use external ChromaDB or fallback-only mode.
+**Note:** Cloud Run is stateless — ChromaDB won't persist. Use external ChromaDB or fallback-only mode.
 
 #### Railway / Render
 
 1. Connect GitHub repo
 2. Set build command: `pip install -r requirements.txt && python -m backend.export_data`
 3. Set start command: `python -m backend.api`
-4. Add second service for frontend: `streamlit run frontend/app.py`
 
 ---
 
@@ -193,7 +177,7 @@ steps:
 
 Best for: Microservices architecture, scaling
 
-**API Service:**
+**API Service (serves frontend + API):**
 ```bash
 # Environment
 export OLLAMA_HOST=http://ollama-internal:11434
@@ -201,15 +185,6 @@ export ALLOWED_ORIGINS=https://yourdomain.com
 
 # Run
 uvicorn backend.api:app --host 0.0.0.0 --port 8000 --workers 4
-```
-
-**Frontend Service:**
-```bash
-# Environment
-export API_BASE_URL=https://api.yourdomain.com
-
-# Run
-streamlit run frontend/app.py --server.port 8501
 ```
 
 **Ollama Service:**
@@ -224,14 +199,12 @@ server {
     listen 80;
     server_name yourdomain.com;
 
-    location /api/ {
-        proxy_pass http://localhost:8000/;
-        proxy_set_header Host $host;
-    }
-
     location / {
-        proxy_pass http://localhost:8501;
+        proxy_pass http://localhost:8000;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
@@ -247,6 +220,7 @@ server {
 - [ ] Test ICD-10 prediction endpoint
 - [ ] Test treatment recommendation endpoint
 - [ ] Verify data directory is writable
+- [ ] Verify HTML templates are copied correctly (frontend/static/)
 
 ### Security
 - [ ] Change `ALLOWED_ORIGINS` from `*` to specific domains
@@ -254,11 +228,11 @@ server {
 - [ ] Add authentication if needed
 - [ ] Disable `/docs` in production if not needed
 - [ ] Set up firewall rules
+- [ ] Set secure cookie and CSRF settings
 
 ### Performance
 - [ ] Use multiple uvicorn workers: `--workers 4`
 - [ ] Enable HTTP/2 if possible
-- [ ] Consider CDN for static assets
 - [ ] Monitor memory usage (ChromaDB loads into RAM)
 
 ### Monitoring
@@ -279,7 +253,6 @@ ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
 # Optional
 OLLAMA_HOST=http://localhost:11434
 OLLAMA_MODEL=qwen2:7b-instruct-q5_K_M
-API_BASE_URL=https://api.yourdomain.com
 
 # Performance
 UVICORN_WORKERS=4
@@ -291,9 +264,9 @@ LOG_LEVEL=info
 ## Scaling Considerations
 
 ### Horizontal Scaling
-- API is stateless - can scale behind load balancer
+- API is stateless — can scale behind load balancer
 - ChromaDB requires shared storage or external vector DB
-- Frontend can scale independently
+- Frontend is served by API; no separate scaling needed
 
 ### Without Ollama
 - Remove LLM dependency entirely
@@ -315,7 +288,7 @@ LOG_LEVEL=info
 
 ### Issue: ChromaDB errors
 **Cause**: `data/chroma/` directory missing or corrupted
-**Fix**: 
+**Fix**:
 ```bash
 rm -rf data/chroma
 # Re-run will recreate on first query
@@ -323,23 +296,27 @@ rm -rf data/chroma
 
 ### Issue: Frontend can't reach API
 **Cause**: CORS or network issues
-**Fix**: Check `ALLOWED_ORIGINS` and `API_BASE_URL`
+**Fix**: Check `ALLOWED_ORIGINS` environment variable
 
 ### Issue: Ollama connection refused
 **Cause**: Ollama not running or wrong host
-**Fix**: 
+**Fix**:
 - Check Ollama status: `ollama list`
 - Verify `OLLAMA_HOST` environment variable
 - Or run without Ollama (fallback mode)
+
+### Issue: Static files not loading
+**Cause**: Missing or incorrect template/static paths
+**Fix**: Ensure `frontend/` directory is copied into the container or deployment
 
 ---
 
 ## Backup and Recovery
 
 ### Important Files to Backup
-- `data/knowledge_base.json` - Can be regenerated
-- `data/chroma/` - Vector index (can be rebuilt)
-- `models/` - Trained ML models
+- `data/knowledge_base.json` — Can be regenerated
+- `data/chroma/` — Vector index (can be rebuilt)
+- `models/` — Trained ML models
 
 ### Regenerate from Source
 If data is lost:
@@ -371,9 +348,9 @@ curl https://yourdomain.com/health
 ```
 
 **Key Metrics:**
-- `knowledge_base_loaded` - Must be true
-- `chroma_ready` - Must be true
-- `ollama_available` - Optional (fallback works without)
+- `knowledge_base_loaded` — Must be true
+- `chroma_ready` — Must be true
+- `ollama_available` — Optional (fallback works without)
 
 ---
 
