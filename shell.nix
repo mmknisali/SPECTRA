@@ -10,6 +10,7 @@ pkgs.mkShell {
     git
     curl
     lsof
+    cloudflared
   ];
 
   shellHook = ''
@@ -41,10 +42,12 @@ pkgs.mkShell {
     echo "  Commands:"
     echo "    devenv up              # Start all services"
     echo "    bash start.sh          # Start API with edge-case handling"
-    echo "    python -m backend.export_data    # Generate data"
-    echo "    python -m backend.api            # Start API"
+    echo "    START_CLOUDFLARE=true bash start.sh  # + Cloudflare tunnel"
+    echo "    python -m backend.export_data        # Generate data"
+    echo "    python -m backend.api                # Start API"
     echo ""
-    echo "  API: http://localhost:8000"
+    echo "  Local:  http://localhost:8000"
+    echo "  Public: https://spectra.alissecretserver.online"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   '';
 }

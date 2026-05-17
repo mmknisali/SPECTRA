@@ -1,15 +1,16 @@
 # ─────────────────────────────────────────────────────────────
 #  Cloudflare Tunnel configuration
-#  Tunnel:  alissecretserver.online
-#  Only Jellyfin is exposed publicly — no Zero Trust / login wall
+#  Tunnel:  spectra.alissecretserver.online
 # ─────────────────────────────────────────────────────────────
 
-tunnel: f4edd655-39df-41d9-aec9-d2b0cbfa03ef         # ← same as CF_TUNNEL_ID in .env
+tunnel: f4edd655-39df-41d9-aec9-d2b0cbfa03ef
+
+credentials-file: /home/ali/.cloudflared/f4edd655-39df-41d9-aec9-d2b0cbfa03ef.json
 
 ingress:
-  # Jellyfin — publicly accessible at jellyfin.alissecretserver.online
+  # SPECTRA — publicly accessible at spectra.alissecretserver.online
   - hostname: spectra.alissecretserver.online
-    service: http://localhost:8501
+    service: http://localhost:8000
     originRequest:
       noTLSVerify: false
       connectTimeout: 30s

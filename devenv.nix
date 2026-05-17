@@ -8,6 +8,7 @@
     python311Packages.pip
     python311Packages.virtualenv
     lsof
+    cloudflared
   ];
 
   # Processes for `devenv up`
@@ -60,6 +61,36 @@
         exec python -m backend.api
       '';
     };
+
+    # Cloudflare Tunnel (exposes API to the internet)
+    cloudflare = {
+      exec = ''
+        CONFIG_FILE="$PWD/cloudflared/config.yml"
+
+        if [ ! -f "$CONFIG_FILE" ]; then
+          echo "[cloudflare] Config not found at $CONFIG_FILE. Skipping."
+          tail -f /dev/null
+          exit 0
+        fi
+
+        # Wait for API to be ready
+        echo "[cloudflare] Waiting for SPECTRA API on port 8000..."
+        for i in $(seq 1 30); do
+          if curl -s --max-time 1 http://localhost:8000/health &>/dev/null; then
+            echo "[cloudflare] API is ready"
+            break
+          fi
+          if [ $i -eq 30 ]; then
+            echo "[cloudflare] API did not start within 30s. Starting tunnel anyway..."
+          fi
+          sleep 1
+        done
+
+        echo "[cloudflare] Starting Cloudflare Tunnel..."
+        echo "[cloudflare] Public URL: https://spectra.alissecretserver.online"
+        exec cloudflared tunnel --config "$CONFIG_FILE" run
+      '';
+    };
   };
 
   enterShell = ''
@@ -73,14 +104,15 @@
     echo ""
     echo "  Quick Start:"
     echo "    devenv up              # Start all services"
-    echo "    bash start.sh          # Start with edge-case handling"
+    echo "    bash start.sh          # Start API with edge-case handling"
     echo ""
     echo "  Manual:"
     echo "    python -m backend.export_data  # Generate data"
     echo "    python -m backend.api          # Start API"
     echo ""
-    echo "  API: http://localhost:8000"
-    echo "  Docs: http://localhost:8000/docs"
+    echo "  Local:  http://localhost:8000"
+    echo "  Public: https://spectra.alissecretserver.online"
+    echo "  Docs:   http://localhost:8000/docs"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   '';
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPECTRA Startup Script
-# Handles all edge cases: data generation, Ollama detection, port conflicts, etc.
+# Handles all edge cases: data generation, Ollama detection, port conflicts, Cloudflare tunnel
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,12 +11,14 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 log_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_cf()    { echo -e "${CYAN}[CLOUDFLARE]${NC} $1"; }
 
 # ---------------------------------------------------------------------------
 # Pre-flight checks
@@ -159,6 +161,54 @@ sys.exit(0 if any('$OLLAMA_MODEL' in m for m in models) else 1)
 }
 
 # ---------------------------------------------------------------------------
+# Cloudflare Tunnel
+# ---------------------------------------------------------------------------
+start_cloudflare() {
+    local config_file="cloudflared/config.yml"
+
+    if [ ! -f "$config_file" ]; then
+        log_warn "Cloudflare config not found at $config_file. Skipping tunnel."
+        return 0
+    fi
+
+    if ! command -v cloudflared &>/dev/null; then
+        log_warn "cloudflared binary not found. Install it or use: nix-shell -p cloudflared"
+        log_info "Download: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
+        return 0
+    fi
+
+    # Check credentials file
+    local tunnel_id
+    tunnel_id=$(grep '^tunnel:' "$config_file" | awk '{print $2}')
+    local creds_file="$HOME/.cloudflared/${tunnel_id}.json"
+
+    if [ ! -f "$creds_file" ]; then
+        log_warn "Cloudflare credentials not found at $creds_file"
+        log_info "Run: cloudflared tunnel login"
+        log_info "Then: cloudflared tunnel route dns $tunnel_id spectra.alissecretserver.online"
+        return 0
+    fi
+
+    log_cf "Waiting for API to be ready..."
+    for i in $(seq 1 30); do
+        if curl -s --max-time 1 http://localhost:8000/health &>/dev/null; then
+            log_cf "API is ready"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            log_warn "API did not start within 30s. Starting tunnel anyway..."
+        fi
+        sleep 1
+    done
+
+    log_cf "Starting Cloudflare Tunnel..."
+    log_cf "Public URL: https://spectra.alissecretserver.online"
+    cloudflared tunnel --config "$config_file" run &
+    CLOUDFLARE_PID=$!
+    log_ok "Cloudflare tunnel started (PID: $CLOUDFLARE_PID)"
+}
+
+# ---------------------------------------------------------------------------
 # Port checks
 # ---------------------------------------------------------------------------
 check_port() {
@@ -172,6 +222,25 @@ check_port() {
     log_ok "Port $port is available ($name)"
     return 0
 }
+
+# ---------------------------------------------------------------------------
+# Cleanup on exit
+# ---------------------------------------------------------------------------
+cleanup() {
+    echo ""
+    log_info "Shutting down..."
+    if [ -n "${CLOUDFLARE_PID:-}" ]; then
+        kill $CLOUDFLARE_PID 2>/dev/null || true
+        log_cf "Cloudflare tunnel stopped"
+    fi
+    if [ -n "${OLLAMA_PID:-}" ]; then
+        kill $OLLAMA_PID 2>/dev/null || true
+        log_info "Ollama stopped"
+    fi
+    exit 0
+}
+
+trap cleanup SIGINT SIGTERM
 
 # ---------------------------------------------------------------------------
 # Main
@@ -215,6 +284,11 @@ main() {
     echo "  Press Ctrl+C to stop"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
+
+    # Start Cloudflare tunnel if requested
+    if [ "${START_CLOUDFLARE:-false}" = "true" ]; then
+        start_cloudflare
+    fi
 
     # Start the API
     exec $PYTHON -m backend.api
