@@ -515,6 +515,12 @@ const icd10Count = document.getElementById('icd10Count');
 clinicalInput.addEventListener('input', () => {
     const len = clinicalInput.value.length;
     charCount.textContent = `${len} karakter`;
+    const MAX_LEN = 10000;
+    if (len > MAX_LEN * 0.9) {
+        charCount.style.color = 'var(--warning)';
+    } else {
+        charCount.style.color = '';
+    }
 });
 
 function showLoading(container, message = 'Analiz ediliyor...') {
@@ -689,7 +695,12 @@ function renderIcd10(data) {
 }
 
 async function runAnalysis() {
-    const clinicalText = clinicalInput.value.trim();
+    const MAX_LEN = 10000;
+    let clinicalText = clinicalInput.value.trim();
+    const originalLen = clinicalText.length;
+    if (originalLen > MAX_LEN) {
+        clinicalText = clinicalText.slice(0, MAX_LEN);
+    }
     if (!clinicalText || clinicalText.length < 10) {
         showError(tabRisk, 'Lütfen en az 10 karakterlik klinik not girin.');
         showEmpty(tabSummary, 'Klinik not girilmedi.');
@@ -740,6 +751,9 @@ async function runAnalysis() {
 
     analyzeBtn.disabled = false;
     analyzeBtn.innerHTML = '<i class="fas fa-brain"></i> Analiz Et';
+
+    const riskTab = document.querySelector('.tab[data-tab="risk"]');
+    if (riskTab) riskTab.click();
 }
 
 document.querySelectorAll('.tab').forEach(tab => {

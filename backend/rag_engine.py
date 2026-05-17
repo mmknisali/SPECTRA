@@ -1,28 +1,48 @@
 """
-RAG Query Engine for SPECTRA
-Uses ChromaDB + Ollama (local LLM) to provide treatment recommendations
+RAG Query Engine
+================
+Uses ChromaDB + Ollama (local LLM) to provide treatment recommendations,
+patient summaries, and risk assessments.
+
+Flow for each analysis:
+    1. Query ChromaDB for similar patients
+    2. Build a prompt with similar patient context
+    3. Call Ollama LLM with system prompt
+    4. Parse JSON response
+    5. Fall back to rule-based logic if LLM fails
+
+Fallback protocols are defined inline in this module for the five supported
+cancer types.
 """
 
-import os
 import json
-import re
 import logging
-import requests
-from typing import Optional, Dict, Any, List
+import re
+from typing import Any, Dict, List, Optional
+
 import chromadb
-from pathlib import Path
-from dotenv import load_dotenv
+import pandas as pd
+import requests
+
+from backend.config import (
+    CHROMA_PATH,
+    COLLECTION_NAME,
+    OLLAMA_HOST,
+    OLLAMA_MODEL,
+    OLLAMA_TIMEOUT,
+)
+from backend.utils import (
+    calculate_risk_score,
+    extract_cancer_type,
+    extract_labs_from_text,
+    flag_abnormal_labs,
+)
 
 logger = logging.getLogger("spectra.rag")
 
-load_dotenv()
-
-ROOT_DIR = Path(__file__).parent.parent
-CHROMA_PATH = ROOT_DIR / "data" / "chroma"
-COLLECTION_NAME = "spectra_knowledge"
-
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2:7b-instruct-q5_K_M")
+# ===========================================================================
+# System prompts
+# ===========================================================================
 
 TREATMENT_SYSTEM_PROMPT = """Sen deneyimli bir tıbbi onkolog uzmanısın. Türk hastanelerinde yıllarca çalışmış ve çeşitli kanser türleri için tedavi protokolleri konusunda geniş deneyime sahipsin.
 
@@ -76,20 +96,24 @@ Verilen klinik metni ve laboratuvar sonuçlarını analiz et ve SADECE JSON form
 3. Anormal lab değerlerini referans aralıklarına göre değerlendir
 4. Öneriler kısa ve klinik olarak anlamlı olmalı"""
 
+# ===========================================================================
+# ChromaDB helpers
+# ===========================================================================
+
 
 def get_chroma_client() -> Optional[chromadb.PersistentClient]:
-    """Get ChromaDB client"""
+    """Get or create a ChromaDB client."""
     try:
         client = chromadb.PersistentClient(path=str(CHROMA_PATH))
         client.get_collection(name=COLLECTION_NAME)
         return client
     except Exception as e:
-        logger.warning(f"ChromaDB client init failed: {e}")
+        logger.warning("ChromaDB client init failed: %s", e)
         return None
 
 
 def query_similar_patients(cancer_type: str, n_results: int = 3) -> List[Dict[str, Any]]:
-    """Query ChromaDB for similar patient notes by cancer type"""
+    """Query ChromaDB for similar patients by cancer type."""
     client = get_chroma_client()
     if not client:
         return []
@@ -99,30 +123,31 @@ def query_similar_patients(cancer_type: str, n_results: int = 3) -> List[Dict[st
         results = collection.query(
             query_texts=[f"{cancer_type} kanseri tedavi ilaç epikriz"],
             n_results=n_results,
-            include=["documents", "metadatas"]
+            include=["documents", "metadatas"],
         )
 
         documents = results.get("documents", [[]])[0]
         metadatas = results.get("metadatas", [[]])[0]
 
-        similar_patients = []
-        for doc, meta in zip(documents, metadatas):
-            if doc:
-                similar_patients.append({
-                    "document": doc,
-                    "cancer_type": meta.get("cancer_type", "Bilinmiyor"),
-                    "gender": meta.get("gender", "Bilinmiyor"),
-                    "has_epikriz": meta.get("has_epikriz", False)
-                })
-        return similar_patients
-
+        return [
+            {
+                "document": doc,
+                "cancer_type": meta.get("cancer_type", "Bilinmiyor"),
+                "gender": meta.get("gender", "Bilinmiyor"),
+                "has_epikriz": meta.get("has_epikriz", False),
+            }
+            for doc, meta in zip(documents, metadatas)
+            if doc
+        ]
     except Exception as e:
-        logger.warning(f"ChromaDB query failed: {e}")
+        logger.warning("ChromaDB query failed: %s", e)
         return []
 
 
-def query_similar_patients_by_text(clinical_text: str, n_results: int = 3) -> List[Dict[str, Any]]:
-    """Query ChromaDB for similar patient notes by clinical text content"""
+def query_similar_patients_by_text(
+    clinical_text: str, n_results: int = 3
+) -> List[Dict[str, Any]]:
+    """Query ChromaDB for similar patients by clinical text content."""
     client = get_chroma_client()
     if not client:
         return []
@@ -133,30 +158,37 @@ def query_similar_patients_by_text(clinical_text: str, n_results: int = 3) -> Li
         results = collection.query(
             query_texts=[query],
             n_results=n_results,
-            include=["documents", "metadatas"]
+            include=["documents", "metadatas"],
         )
 
         documents = results.get("documents", [[]])[0]
         metadatas = results.get("metadatas", [[]])[0]
 
-        similar_patients = []
-        for doc, meta in zip(documents, metadatas):
-            if doc:
-                similar_patients.append({
-                    "document": doc[:600] if doc else "",
-                    "cancer_type": meta.get("cancer_type", "Bilinmiyor"),
-                    "gender": meta.get("gender", "Bilinmiyor"),
-                    "has_epikriz": meta.get("has_epikriz", False)
-                })
-        return similar_patients
-
+        return [
+            {
+                "document": doc[:600] if doc else "",
+                "cancer_type": meta.get("cancer_type", "Bilinmiyor"),
+                "gender": meta.get("gender", "Bilinmiyor"),
+                "has_epikriz": meta.get("has_epikriz", False),
+            }
+            for doc, meta in zip(documents, metadatas)
+            if doc
+        ]
     except Exception as e:
-        logger.warning(f"ChromaDB query by text failed: {e}")
+        logger.warning("ChromaDB query by text failed: %s", e)
         return []
 
+# ===========================================================================
+# Ollama helpers
+# ===========================================================================
 
-def call_ollama_api(prompt: str, max_tokens: int = 600, system_prompt: Optional[str] = None) -> Optional[str]:
-    """Call Ollama API with optional system prompt"""
+
+def call_ollama_api(
+    prompt: str,
+    max_tokens: int = 600,
+    system_prompt: Optional[str] = None,
+) -> Optional[str]:
+    """Call Ollama API with an optional system prompt."""
     sp = system_prompt if system_prompt else TREATMENT_SYSTEM_PROMPT
     try:
         response = requests.post(
@@ -165,28 +197,28 @@ def call_ollama_api(prompt: str, max_tokens: int = 600, system_prompt: Optional[
                 "model": OLLAMA_MODEL,
                 "prompt": f"{sp}\n\n{prompt}",
                 "stream": False,
-                "options": {"num_predict": max_tokens, "temperature": 0.3}
+                "options": {"num_predict": max_tokens, "temperature": 0.3},
             },
-            timeout=120
+            timeout=OLLAMA_TIMEOUT,
         )
 
         if response.status_code == 200:
             return response.json().get("response", "").strip()
     except Exception as e:
-        logger.warning(f"Ollama API call failed: {e}")
+        logger.warning("Ollama API call failed: %s", e)
     return None
 
 
 def parse_llm_response(response_text: str) -> Dict[str, Any]:
-    """Parse LLM response into structured format"""
+    """Parse LLM JSON response into a structured dict."""
     try:
-        json_match = re.search(r'\{[\s\S]*\}', response_text)
+        json_match = re.search(r"\{[\s\S]*\}", response_text)
         if json_match:
             result = json.loads(json_match.group())
             return {
                 "recommended_labs": result.get("recommended_labs", []),
                 "treatment_protocol": result.get("treatment_protocol", ""),
-                "source": "rag+llm"
+                "source": "rag+llm",
             }
     except Exception:
         pass
@@ -194,13 +226,21 @@ def parse_llm_response(response_text: str) -> Dict[str, Any]:
     return {
         "recommended_labs": [],
         "treatment_protocol": response_text[:500] if response_text else "",
-        "source": "rag+llm"
+        "source": "rag+llm",
     }
 
+# ===========================================================================
+# Prompt building
+# ===========================================================================
 
-def build_prompt(cancer_type: str, similar_patients: List[Dict[str, Any]], patient_labs: Optional[Dict] = None) -> str:
-    """Build Turkish prompt for LLM"""
-    prompt = f" kanser türü: {cancer_type}\n\n"
+
+def build_treatment_prompt(
+    cancer_type: str,
+    similar_patients: List[Dict[str, Any]],
+    patient_labs: Optional[Dict] = None,
+) -> str:
+    """Build a Turkish prompt for treatment recommendation."""
+    prompt = f"Kanser türü: {cancer_type}\n\n"
 
     if similar_patients:
         prompt += "Benzer hastaların tedavi geçmişleri:\n\n"
@@ -214,7 +254,7 @@ def build_prompt(cancer_type: str, similar_patients: List[Dict[str, Any]], patie
         prompt += "Bu kanser türü için standart tedavi yaklaşımlarına göre, "
 
     if patient_labs:
-        prompt += f" hastanın laboratuvar sonuçları: {patient_labs}. "
+        prompt += f"hastanın laboratuvar sonuçları: {patient_labs}. "
 
     prompt += """Bu hasta için tedavi önerileri sun.
 Lütfen şu bilgileri içeren JSON yanıtı ver:
@@ -223,11 +263,18 @@ Lütfen şu bilgileri içeren JSON yanıtı ver:
 
     return prompt
 
+# ===========================================================================
+# Treatment recommendation
+# ===========================================================================
 
-def get_treatment_recommendation(cancer_type: str, patient_labs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Get treatment recommendation using RAG + LLM"""
+
+def get_treatment_recommendation(
+    cancer_type: str,
+    patient_labs: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Get treatment recommendation using RAG + LLM with fallback."""
     similar_patients = query_similar_patients(cancer_type, n_results=3)
-    prompt = build_prompt(cancer_type, similar_patients, patient_labs)
+    prompt = build_treatment_prompt(cancer_type, similar_patients, patient_labs)
     llm_response = call_ollama_api(prompt)
 
     if llm_response:
@@ -240,171 +287,93 @@ def get_treatment_recommendation(cancer_type: str, patient_labs: Optional[Dict[s
 
 
 def get_fallback_recommendation(cancer_type: str) -> Dict[str, Any]:
-    """Fallback recommendation when no LLM is available"""
+    """Rule-based fallback recommendation when no LLM is available."""
     fallback_map = {
         "karaciğer kanseri": {
             "recommended_labs": ["AFP", "AST", "ALT", "Bilirubin", "Albumin", "ALP", "GGT"],
-            "treatment_protocol": "Hepatosellüler karsinomda BCLC evreleme sistemine göre tedavi planlanır. Erken evre hastalarda cerrahi rezeksiyon veya ablasyon düşünülür. İleri evre hastalarda sistemik tedavi olarak tirozin kinaz inhibitörleri (Sorafenib, Lenvatinib) veya immünoterapi (Atezolizumab + Bevacizumab) kullanılır."
+            "treatment_protocol": (
+                "Hepatosellüler karsinomda BCLC evreleme sistemine göre tedavi planlanır. "
+                "Erken evre hastalarda cerrahi rezeksiyon veya ablasyon düşünülür. "
+                "İleri evre hastalarda sistemik tedavi olarak tirozin kinaz inhibitörleri "
+                "(Sorafenib, Lenvatinib) veya immünoterapi (Atezolizumab + Bevacizumab) kullanılır."
+            ),
         },
         "meme kanseri": {
-            "recommended_labs": ["CA-15.3", "CEA", "HER2", "ER", "PR", "Mamografi"],
-            "treatment_protocol": "Meme kanseri tedavisinde cerrahi (mastektomi veya lumpektomi), adjuvan kemoterapi, hormonal tedavi ve radyoterapi kombinasyonu kullanılır. Hormon reseptör pozitif hastalarda endocrine tedavi (Tamoksifen veya aromataz inhibitörleri), HER2 pozitif hastalarda Trastuzumab önerilir."
+            "recommended_labs": ["CEA", "CA 15-3", "Tam kan sayımı", "Karaciğer fonksiyon testleri"],
+            "treatment_protocol": (
+                "Meme kanserinde tedavi evreye göre planlanır. Erken evrede cerrahi "
+                "(mastektomi veya koruyucu cerrahi) + radyoterapi önerilir. Adjuvan "
+                "kemoterapi (AC, FEC protokolleri) ve hormonoterapi (Tamoksifen, Aromataz "
+                "inhibitörleri) uygulanır. İleri evrede kemoterapi ve hedefe yönelik "
+                "tedaviler (Trastuzumab, CDK4/6 inhibitörleri) kullanılır."
+            ),
         },
         "multipl miyelom": {
-            "recommended_labs": ["Beta-2 mikroglobulin", "Serbest zincir", "M protein", "Kreatinin", "Kalsiyum"],
-            "treatment_protocol": "Multipl miyelom tedavisinde proteazom inhibitörü (Bortezomib), immünomodülatör (Lenalidomid) ve kortikosteroid kombinasyonları kullanılır. Genç hastalarda otolog kök hücre transplantasyonu düşünülür. Yeni tanı hastalarda VRd (Bortezomib, Lenalidomid, Deksametazon) protokolü sıklıkla kullanılır."
+            "recommended_labs": [
+                "Serum protein elektroforezi", "Serbest kappa/lambda",
+                "Kreatinin", "Kalsiyum", "Beta-2 mikroglobulin",
+            ],
+            "treatment_protocol": (
+                "Multipl miyelomda ilk basamak tedavi genellikle bortezomib + lenalidomid "
+                "+ deksametazon (VRd) kombinasyonudur. İkinci basamakta daratumumab veya "
+                "karfilzomib içeren rejimler kullanılır. Otolog kök hücre nakli uygun "
+                "hastalarda düşünülmelidir."
+            ),
         },
         "over kanseri": {
-            "recommended_labs": ["CA-125", "HE4", "AFP", "CEA", "Görüntüleme"],
-            "treatment_protocol": "Over kanserinde primer debulking cerrahisi standart tedavidir. Ardından platinum bazlı kemoterapi (Karboplatin + Paklitaksel) uygulanır. BRCA mutasyonu taşıyan hastalarda PARP inhibitörleri (Olaparib) bakımda önerilir."
+            "recommended_labs": ["CA-125", "HE4", "Tam kan sayımı", "Kreatinin", "LFT"],
+            "treatment_protocol": (
+                "Over kanserinde standart tedavi cerrahi (tümör debulking) + platin bazlı "
+                "kemoterapidir. İlk basamakta karboplatin + paklitaksel (CarboTaxol) "
+                "kullanılır. BRCA mutasyonlu hastalarda PARP inhibitörleri (olaparib) "
+                "önemli rol oynamaktadır."
+            ),
         },
         "prostat kanseri": {
-            "recommended_labs": ["PSA", "Serbest PSA", "Kreatinin", "Hb"],
-            "treatment_protocol": "Prostat kanseri tedavisi evreye göre değişir. Lokalize hastalıkta radikal prostatektomi veya radyoterapi uygulanır. Metastatik hastalıkta androgen deprivasyon tedavisi (ADT) temel tedavidir. Dirençli hastalıkta abirateron, enzalutamid veya docetaksel kullanılır."
-        }
+            "recommended_labs": ["PSA", "Testosteron", "Tam kan sayımı", "Kreatinin", "ALP"],
+            "treatment_protocol": (
+                "Prostat kanserinde lokalize hastalıkta radikal prostatektomi veya "
+                "radyoterapi önerilir. Metastatik hormon duyarlı hastalıkta androjen "
+                "deprivasyon tedavisi (ADT) başlanır. Kastrasyon dirençli hastalıkta "
+                "abirateron, enzalutamid veya doketaksel kullanılır."
+            ),
+        },
     }
 
-    cancer_lower = cancer_type.lower()
-    for key in fallback_map:
-        if key in cancer_lower or cancer_lower in key:
-            result = fallback_map[key].copy()
-            result["source"] = "fallback"
-            return result
+    key = cancer_type.lower().strip()
+    if key in fallback_map:
+        return {**fallback_map[key], "source": "fallback"}
 
     return {
-        "recommended_labs": [],
-        "treatment_protocol": f"{cancer_type} için tedavi planı hastanın bireysel durumuna göre belirlenmelidir. Detaylı değerlendirme için multidisipliner onkoloji konseyi önerilir.",
-        "source": "fallback"
+        "recommended_labs": ["Genel durum değerlendirmesi"],
+        "treatment_protocol": (
+            f"{cancer_type} tedavisi için multidisipliner onkoloji konseyinde "
+            "değerlendirilmesi ve literatüre uygun protokol uygulanması önerilir."
+        ),
+        "source": "fallback",
     }
 
-
-def check_rag_system() -> Dict[str, Any]:
-    """Check if RAG system is ready"""
-    try:
-        client = get_chroma_client()
-        if not client:
-            return {"ready": False, "error": "ChromaDB client not available"}
-
-        collection = client.get_collection(name=COLLECTION_NAME)
-        count = collection.count()
-
-        return {
-            "ready": count > 0,
-            "document_count": count,
-            "collection_name": COLLECTION_NAME,
-            "chroma_path": str(CHROMA_PATH)
-        }
-    except Exception as e:
-        return {"ready": False, "error": str(e)}
-
-
-def extract_cancer_from_text(text: str) -> Optional[str]:
-    """Extract cancer type from clinical text using keyword matching"""
-    if not text:
-        return None
-    text_lower = text.lower()
-    keywords = [
-        (["meme kanseri", "meme karsinomu", "meme ca", "meme malign", "meme tümörü"], "Meme Kanseri"),
-        (["karaciğer kanseri", "karaciğer karsinomu", "hepatosellüler", "hcc", "hepatom"], "Karaciğer kanseri"),
-        (["multipl miyelom", "multiple myelom", "plazma hücreli"], "Multipl miyelom"),
-        (["over kanseri", "over karsinomu", "over ca", "yumurtalık kanseri"], "Over kanseri"),
-        (["prostat kanseri", "prostat karsinomu", "prostat ca"], "Prostat kanseri"),
-        (["akciğer kanseri", "akciğer karsinomu", "akciğer ca", "lung cancer", "küçük hücreli"], "Akciğer kanseri"),
-        (["kolon kanseri", "kolon karsinomu", "kolorektal", "rektum kanseri", "bağırsak kanseri"], "Kolon kanseri"),
-        (["pankreas kanseri", "pankreas karsinomu", "pankreas ca"], "Pankreas kanseri"),
-        (["mide kanseri", "mide karsinomu", "gastric", "gastrik"], "Mide kanseri"),
-        (["lenfoma", "hodgkin", "non-hodgkin"], "Lenfoma"),
-        (["lösemi"], "Lösemi"),
-        (["tiroid kanseri", "tiroid karsinomu"], "Tiroid kanseri"),
-    ]
-    for kws, cancer_name in keywords:
-        for kw in kws:
-            if kw in text_lower:
-                return cancer_name
-    return None
-
-
-def extract_labs_from_text(lab_text: str) -> Dict[str, str]:
-    """Extract lab name + value pairs from free text"""
-    if not lab_text:
-        return {}
-    labs = {}
-    patterns = [
-        (r'ast[:\s]*([\d.]+)', 'AST'),
-        (r'alt[:\s]*([\d.]+)', 'ALT'),
-        (r'crp[:\s]*([\d.]+)', 'CRP'),
-        (r'kreatinin[:\s]*([\d.]+)', 'Kreatinin'),
-        (r'üre[:\s]*([\d.]+)', 'Üre'),
-        (r'sodyum[:\s]*([\d.]+)', 'Sodyum'),
-        (r'potasyum[:\s]*([\d.]+)', 'Potasyum'),
-        (r'kalsiyum[:\s]*([\d.]+)', 'Kalsiyum'),
-        (r'albumin[:\s]*([\d.]+)', 'Albumin'),
-        (r'bilirubin[:\s]*([\d.]+)', 'Bilirubin'),
-        (r'ggt[:\s]*([\d.]+)', 'GGT'),
-        (r'ldh[:\s]*([\d.]+)', 'LDH'),
-        (r'hba1c[:\s]*([\d.]+)', 'HbA1c'),
-        (r'hgb[:\s]*([\d.]+)', 'HGB'),
-        (r'wbc[:\s]*([\d.]+)', 'WBC'),
-        (r'plt[:\s]*([\d.]+)', 'PLT'),
-    ]
-    text_lower = lab_text.lower()
-    for pattern, name in patterns:
-        match = re.search(pattern, text_lower)
-        if match:
-            labs[name] = match.group(1)
-    return labs
-
-
-def flag_abnormal_labs(labs: Dict[str, str]) -> List[str]:
-    """Flag abnormal lab values based on reference ranges"""
-    ref_ranges = {
-        'AST': (0, 40),
-        'ALT': (0, 40),
-        'CRP': (0, 5),
-        'Kreatinin': (0.5, 1.2),
-        'Üre': (10, 50),
-        'Sodyum': (135, 145),
-        'Potasyum': (3.5, 5.5),
-        'Kalsiyum': (8.5, 10.5),
-        'Albumin': (3.5, 5.0),
-        'Bilirubin': (0, 1.2),
-        'GGT': (0, 55),
-        'LDH': (0, 250),
-        'HbA1c': (4, 6),
-        'HGB': (12, 18),
-        'WBC': (4, 11),
-        'PLT': (150, 450),
-    }
-    flags = []
-    for name, val_str in labs.items():
-        try:
-            val = float(val_str)
-            if name in ref_ranges:
-                lo, hi = ref_ranges[name]
-                if val < lo:
-                    flags.append(f"{name}: {val_str} (DÜŞÜK, normal: {lo}-{hi})")
-                elif val > hi:
-                    flags.append(f"{name}: {val_str} (YÜKSEK, normal: {lo}-{hi})")
-        except ValueError:
-            pass
-    return flags
+# ===========================================================================
+# Patient summary
+# ===========================================================================
 
 
 def get_fallback_summary(clinical_text: str, lab_text: str) -> Dict[str, Any]:
-    """Rule-based fallback for patient summary when no LLM"""
-    cancer = extract_cancer_from_text(clinical_text)
+    """Rule-based fallback for patient summary when no LLM."""
+    cancer = extract_cancer_type(clinical_text)
     labs = extract_labs_from_text(lab_text or clinical_text)
-    drug_matches = re.findall(r'\[([^\]]+)\]', clinical_text)
-    drugs = list(set(d.strip() for d in drug_matches))[:8]
+    drug_matches = re.findall(r"\[([^\]]+)\]", clinical_text)
+    drugs = list({d.strip() for d in drug_matches})[:8]
 
-    findings = []
-    if "metastaz" in clinical_text.lower():
+    findings: List[str] = []
+    text_lower = clinical_text.lower()
+    if "metastaz" in text_lower:
         findings.append("Metastatik hastalık")
-    if "opere" in clinical_text.lower():
+    if "opere" in text_lower:
         findings.append("Cerrahi geçirmiş")
-    if "kemoterapi" in clinical_text.lower() or "kt" in clinical_text.lower():
+    if "kemoterapi" in text_lower or "kt" in text_lower:
         findings.append("Kemoterapi almış")
-    if "radyoterapi" in clinical_text.lower() or "rt" in clinical_text.lower():
+    if "radyoterapi" in text_lower or "rt" in text_lower:
         findings.append("Radyoterapi almış")
 
     return {
@@ -414,18 +383,63 @@ def get_fallback_summary(clinical_text: str, lab_text: str) -> Dict[str, Any]:
         "current_medications": drugs if drugs else ["Belirtilmemiş"],
         "key_findings": [clinical_text[:200]] if clinical_text else ["Klinik not girilmemiş"],
         "performance_status": "Belirtilmemiş",
-        "source": "fallback"
+        "source": "fallback",
     }
 
 
+def analyze_patient_summary(
+    clinical_text: str, lab_text: str = ""
+) -> Dict[str, Any]:
+    """Generate structured patient summary from clinical text (RAG + LLM)."""
+    if not clinical_text or len(clinical_text.strip()) < 10:
+        return get_fallback_summary(clinical_text, lab_text)
+
+    similar = query_similar_patients_by_text(clinical_text, n_results=2)
+
+    prompt_parts = [
+        "Aşağıdaki hasta klinik metnini analiz et. Hastanın kanser türünü, "
+        "evresini, tedavi geçmişini ve mevcut durumunu çıkar.\n",
+        f"Hasta klinik metni:\n{clinical_text[:1500]}\n",
+    ]
+    if lab_text:
+        prompt_parts.append(f"Laboratuvar sonuçları:{lab_text[:800]}\n")
+    if similar:
+        prompt_parts.append("Benzer hasta örnekleri:\n")
+        for i, p in enumerate(similar, 1):
+            prompt_parts.append(
+                f"\nBenzer hasta {i} ({p['cancer_type']}):\n{p['document'][:400]}\n"
+            )
+    prompt_parts.append("\nHasta özetini JSON formatında ver.")
+
+    llm_response = call_ollama_api(
+        "".join(prompt_parts), max_tokens=800, system_prompt=SUMMARY_SYSTEM_PROMPT,
+    )
+
+    if llm_response:
+        try:
+            json_match = re.search(r"\{[\s\S]*\}", llm_response)
+            if json_match:
+                result = json.loads(json_match.group())
+                result["source"] = "rag+llm"
+                return result
+        except Exception:
+            pass
+
+    return get_fallback_summary(clinical_text, lab_text)
+
+# ===========================================================================
+# Risk assessment
+# ===========================================================================
+
+
 def get_fallback_risk(clinical_text: str, lab_text: str) -> Dict[str, Any]:
-    """Rule-based fallback for risk assessment when no LLM"""
+    """Rule-based fallback for risk assessment when no LLM."""
     labs = extract_labs_from_text(lab_text or clinical_text)
     abnormal = flag_abnormal_labs(labs)
     combined = (clinical_text + " " + (lab_text or "")).lower()
 
-    risk_factors = []
-    if "metastaz" in combined or "met" in combined.split():
+    risk_factors: List[str] = []
+    if "metastaz" in combined:
         risk_factors.append("Metastaz varlığı")
     if "nüks" in combined or "rekürrens" in combined:
         risk_factors.append("Nüks/Rekürrens")
@@ -436,94 +450,64 @@ def get_fallback_risk(clinical_text: str, lab_text: str) -> Dict[str, Any]:
     if "kötü" in combined or "ileri evre" in combined:
         risk_factors.append("İleri evre hastalık")
 
-    metastasis = []
+    metastasis: List[str] = []
     for site in ["karaciğer", "akciğer", "kemik", "beyin", "lenf"]:
         if site in combined:
             metastasis.append(f"{site} metastazı")
 
-    score = len(risk_factors) + len(abnormal) + len(metastasis)
-    if score >= 4:
-        level = "yüksek"
-    elif score >= 2:
-        level = "orta"
-    else:
-        level = "düşük"
+    level, _ = calculate_risk_score(risk_factors, abnormal, metastasis)
 
     return {
         "risk_level": level,
-        "risk_factors": risk_factors if risk_factors else ["Belirgin risk faktörü tespit edilmedi"],
-        "abnormal_labs": abnormal if abnormal else ["Anormal lab değeri tespit edilmedi"],
-        "metastasis_indicators": metastasis if metastasis else ["Metastaz bulgusu tespit edilmedi"],
+        "risk_factors": risk_factors or ["Belirgin risk faktörü tespit edilmedi"],
+        "abnormal_labs": abnormal or ["Anormal lab değeri tespit edilmedi"],
+        "metastasis_indicators": metastasis or ["Metastaz bulgusu tespit edilmedi"],
         "recommendations": [
             f"Hasta {'yakın takip' if level != 'düşük' else 'rutin takip'} önerilir.",
-            "Multidisipliner onkoloji konseyinde değerlendirilmesi önerilir." if level == "yüksek" else "Standart protokole göre takip edilebilir."
+            (
+                "Multidisipliner onkoloji konseyinde değerlendirilmesi önerilir."
+                if level == "yüksek"
+                else "Standart protokole göre takip edilebilir."
+            ),
         ],
-        "source": "fallback"
+        "source": "fallback",
     }
 
 
-def analyze_patient_summary(clinical_text: str, lab_text: str = "") -> Dict[str, Any]:
-    """Generate structured patient summary from clinical text using RAG + LLM"""
-    if not clinical_text or len(clinical_text.strip()) < 10:
-        return get_fallback_summary(clinical_text, lab_text)
-
-    similar = query_similar_patients_by_text(clinical_text, n_results=2)
-
-    prompt = f"""Aşağıdaki hasta klinik metnini analiz et. Hastanın kanser türünü, evresini, tedavi geçmişini ve mevcut durumunu çıkar.
-
-Hasta klinik metni:
-{clinical_text[:1500]}
-
-{"Laboratuvar sonuçları:" + lab_text[:800] if lab_text else ""}
-
-{"Benzer hasta örnekleri:" if similar else ""}
-"""
-    for i, p in enumerate(similar, 1):
-        prompt += f"\nBenzer hasta {i} ({p['cancer_type']}):\n{p['document'][:400]}\n"
-
-    prompt += "\nHasta özetini JSON formatında ver."
-
-    llm_response = call_ollama_api(prompt, max_tokens=800, system_prompt=SUMMARY_SYSTEM_PROMPT)
-
-    if llm_response:
-        try:
-            json_match = re.search(r'\{[\s\S]*\}', llm_response)
-            if json_match:
-                result = json.loads(json_match.group())
-                result["source"] = "rag+llm"
-                return result
-        except Exception:
-            pass
-
-    return get_fallback_summary(clinical_text, lab_text)
-
-
-def analyze_risk_assessment(clinical_text: str, lab_text: str = "") -> Dict[str, Any]:
-    """Generate risk assessment from clinical text using RAG + LLM"""
+def analyze_risk_assessment(
+    clinical_text: str, lab_text: str = ""
+) -> Dict[str, Any]:
+    """Generate risk assessment from clinical text (RAG + LLM)."""
     if not clinical_text or len(clinical_text.strip()) < 10:
         return get_fallback_risk(clinical_text, lab_text)
 
     similar = query_similar_patients_by_text(clinical_text, n_results=2)
+    labs = extract_labs_from_text(lab_text or clinical_text)
+    abnormal = flag_abnormal_labs(labs)
 
-    prompt = f"""Aşağıdaki hasta klinik metnini ve laboratuvar sonuçlarını analiz ederek risk değerlendirmesi yap.
+    prompt_parts = [
+        "Aşağıdaki hasta verilerini analiz et ve risk değerlendirmesi yap.\n",
+        f"Klinik metin:\n{clinical_text[:1500]}\n",
+    ]
+    if lab_text:
+        prompt_parts.append(f"Laboratuvar sonuçları:{lab_text[:800]}\n")
+    if abnormal:
+        prompt_parts.append(f"Anormal lab değerleri:{abnormal}\n")
+    if similar:
+        prompt_parts.append("Benzer hasta örnekleri:\n")
+        for i, p in enumerate(similar, 1):
+            prompt_parts.append(
+                f"\nBenzer hasta {i} ({p['cancer_type']}):\n{p['document'][:400]}\n"
+            )
+    prompt_parts.append("\nRisk değerlendirmesini JSON formatında ver.")
 
-Hasta klinik metni:
-{clinical_text[:1500]}
-
-{"Laboratuvar sonuçları:" + lab_text[:800] if lab_text else ""}
-
-{"Benzer hasta örnekleri:" if similar else ""}
-"""
-    for i, p in enumerate(similar, 1):
-        prompt += f"\nBenzer hasta {i} ({p['cancer_type']}):\n{p['document'][:400]}\n"
-
-    prompt += "\nRisk değerlendirmesini JSON formatında ver."
-
-    llm_response = call_ollama_api(prompt, max_tokens=800, system_prompt=RISK_SYSTEM_PROMPT)
+    llm_response = call_ollama_api(
+        "".join(prompt_parts), max_tokens=600, system_prompt=RISK_SYSTEM_PROMPT,
+    )
 
     if llm_response:
         try:
-            json_match = re.search(r'\{[\s\S]*\}', llm_response)
+            json_match = re.search(r"\{[\s\S]*\}", llm_response)
             if json_match:
                 result = json.loads(json_match.group())
                 result["source"] = "rag+llm"
@@ -533,41 +517,55 @@ Hasta klinik metni:
 
     return get_fallback_risk(clinical_text, lab_text)
 
+# ===========================================================================
+# ChromaDB indexing
+# ===========================================================================
 
-def index_patient_data(df) -> int:
-    """Index patient data from DataFrame into ChromaDB"""
+
+def index_patient_data(df: pd.DataFrame) -> int:
+    """Index patient data from a DataFrame into ChromaDB.
+
+    Args:
+        df: DataFrame with patient data.
+
+    Returns:
+        Number of documents indexed.
+    """
     client = get_chroma_client()
     if not client:
         try:
             CHROMA_PATH.mkdir(parents=True, exist_ok=True)
             client = chromadb.PersistentClient(path=str(CHROMA_PATH))
         except Exception as e:
-            logger.error(f"Cannot create ChromaDB client: {e}")
+            logger.error("Cannot create ChromaDB client: %s", e)
             return 0
 
     try:
         collection = client.get_or_create_collection(name=COLLECTION_NAME)
         count = collection.count()
         if count > 0:
-            logger.info(f"ChromaDB already has {count} documents, skipping indexing")
+            logger.info("ChromaDB already has %d documents, skipping indexing", count)
             return count
     except Exception as e:
-        logger.error(f"ChromaDB collection error: {e}")
+        logger.error("ChromaDB collection error: %s", e)
         return 0
 
     indexed = 0
     batch_size = 100
-    batch_docs, batch_metas, batch_ids = [], [], []
+    batch_docs: List[str] = []
+    batch_metas: List[Dict[str, Any]] = []
+    batch_ids: List[str] = []
 
-    for idx, row in df.iterrows():
-        epikriz = str(row.get("epikriz", "") or "")
-        hikaye = str(row.get("hikaye", "") or "")
-        lab = str(row.get("lab_sonuclari", "") or "")
-        ilac = str(row.get("ilac", "") or "")
-        cinsiyet = str(row.get("cinsiyet", "") or "")
-        department = str(row.get("department", "") or "")
+    for row in df.itertuples(index=True):
+        idx = row.Index
+        epikriz = str(getattr(row, "epikriz", "") or "")
+        hikaye = str(getattr(row, "hikaye", "") or "")
+        lab = str(getattr(row, "lab_sonuclari", "") or "")
+        ilac = str(getattr(row, "ilac", "") or "")
+        cinsiyet = str(getattr(row, "cinsiyet", "") or "")
+        department = str(getattr(row, "department", "") or "")
 
-        cancer = extract_cancer_from_text(epikriz + " " + hikaye)
+        cancer = extract_cancer_type(epikriz + " " + hikaye)
         if not cancer:
             continue
 
@@ -586,25 +584,38 @@ def index_patient_data(df) -> int:
 
         if len(batch_docs) >= batch_size:
             try:
-                collection.add(documents=batch_docs, metadatas=batch_metas, ids=batch_ids)
+                collection.add(
+                    documents=batch_docs, metadatas=batch_metas, ids=batch_ids,
+                )
                 indexed += len(batch_docs)
-                logger.info(f"Indexed {indexed} patients so far...")
+                logger.info("Indexed %d patients so far...", indexed)
             except Exception as e:
-                logger.warning(f"Batch insert failed: {e}")
+                logger.warning("Batch insert failed: %s", e)
             batch_docs, batch_metas, batch_ids = [], [], []
 
+    # Insert remaining documents
     if batch_docs:
         try:
-            collection.add(documents=batch_docs, metadatas=batch_metas, ids=batch_ids)
+            collection.add(
+                documents=batch_docs, metadatas=batch_metas, ids=batch_ids,
+            )
             indexed += len(batch_docs)
         except Exception as e:
-            logger.warning(f"Final batch insert failed: {e}")
+            logger.warning("Final batch insert failed: %s", e)
 
-    logger.info(f"ChromaDB indexing complete: {indexed} patients indexed")
+    logger.info("Total indexed: %d patients", indexed)
     return indexed
 
 
-if __name__ == "__main__":
-    status = check_rag_system()
-    print(json.dumps(status, indent=2, ensure_ascii=False))
-    print(f"\nUsing Ollama: {OLLAMA_MODEL} at {OLLAMA_HOST}")
+def check_rag_system() -> Dict[str, Any]:
+    """Check RAG system status."""
+    client = get_chroma_client()
+    if not client:
+        return {"ready": False, "document_count": 0, "error": "ChromaDB not available"}
+
+    try:
+        collection = client.get_collection(name=COLLECTION_NAME)
+        count = collection.count()
+        return {"ready": True, "document_count": count}
+    except Exception as e:
+        return {"ready": False, "document_count": 0, "error": str(e)}

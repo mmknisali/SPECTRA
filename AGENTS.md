@@ -40,11 +40,27 @@ Doctor's HBYS website (e.g. Pusula)
 - CORS allows all origins by default (`ALLOWED_ORIGINS=*`)
 - All analysis has RAG+LLM (Ollama) and fallback (rule-based) paths
 
+## Module Structure
+
+```
+backend/
+├── __init__.py             # Package metadata
+├── config.py               # All constants, env vars, patterns (single source of truth)
+├── exceptions.py           # Custom exception hierarchy
+├── utils.py                # Pure helper functions (no side effects)
+├── models.py               # Pydantic request/response schemas
+├── data_processor.py       # CSV/Excel loading, cleaning, training pairs
+├── rag_engine.py           # ChromaDB + Ollama RAG pipeline + fallbacks
+├── api.py                  # FastAPI application and routes
+├── export_data.py          # Data export pipeline orchestrator
+└── cancer_classifier.py    # XGBoost model (optional, separate pipeline)
+```
+
 ## PYTHONPATH Requirement
 
 All `python -m backend.*` commands need project root on `PYTHONPATH`.
 This is set automatically by `.envrc` (direnv) and `shell.nix` / `devenv.nix`.
-If not using those, export manually:
+If not using those:
 
 ```bash
 export PYTHONPATH="$PWD"
@@ -59,8 +75,6 @@ export PYTHONPATH="$PWD"
 | `devenv shell` (`devenv.nix`) | No | Yes |
 | Manual `source venv/bin/activate` | Yes | **No** — must set manually |
 
-The `.envrc` also fixes `LD_LIBRARY_PATH` for Nix's gcc libstdc++.
-
 ## Key Commands
 
 ```bash
@@ -70,16 +84,16 @@ uvicorn backend.api:app --reload --port 8000
 # Export/regenerate data files
 python -m backend.export_data
 
-# Train XGBoost cancer classifier (separate feature, not in main flow)
+# Train XGBoost cancer classifier (separate feature)
 python -m backend.cancer_classifier
 
-# LoRA fine-tune Qwen2 on patient Q&A data (requires requirements_vast.txt)
+# LoRA fine-tune Qwen2 on patient Q&A data
 python train.py --use_lora --epochs 3
 
 # Debug: check ChromaDB status
 python -c "from backend.rag_engine import check_rag_system; print(check_rag_system())"
 
-# Debug: query similar patients from ChromaDB
+# Debug: query similar patients
 python -c "from backend.rag_engine import query_similar_patients; print(query_similar_patients('meme kanseri'))"
 
 # Health check
@@ -90,11 +104,10 @@ curl http://localhost:8000/health
 
 | Path | Contents | Created by |
 |------|----------|------------|
-| `data/` | knowledge_base.json, training_data.json | `python -m backend.export_data` |
-| `models/` | cancer_classifier.joblib, feature_scaler.joblib, label_encoder.joblib, lora_adapter/ | `python -m backend.cancer_classifier` or `python train.py` |
+| `data/` | knowledge_base.json, training_data.json, cleaned_patients.csv | `python -m backend.export_data` |
+| `models/` | cancer_classifier.joblib, feature_scaler.joblib, label_encoder.joblib | `python -m backend.cancer_classifier` or `python train.py` |
 
 Neither `data/` nor `models/` exist in the repo. **Always run `export_data.py` first.**
-Note: `data/cleaned_patients.csv` would be created if `export_cleaned_data()` were called in `export_data.py:main()`, but it is not — only `knowledge_base.json` and `training_data.json` are actually exported.
 
 ## ChromaDB Timing
 
@@ -104,7 +117,7 @@ Clear `data/chroma/` and re-run `export_data.py` to force a rebuild.
 
 ## Testing
 
-There is **no test framework** in this repo. No pytest config, no test directory, no CI workflows. Verification is manual:
+There is **no test framework** in this repo. Verification is manual:
 
 ```bash
 curl http://localhost:8000/health
@@ -114,13 +127,17 @@ curl -X POST http://localhost:8000/predict/icd10 \
 curl -X POST http://localhost:8000/recommend/treatment \
   -H "Content-Type: application/json" \
   -d '{"cancer_type": "meme kanseri"}'
+curl -X POST http://localhost:8000/analyze/risk \
+  -H "Content-Type: application/json" \
+  -d '{"clinical_text": "Metastatik meme kanseri", "lab_text": "AST: 120"}'
 ```
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/` | GET | API info |
+| `/` | GET | Frontend popup UI |
+| `/api` | GET | API information |
 | `/health` | GET | System status (KB loaded, Chroma ready, Ollama available) |
 | `/predict/icd10` | POST | ICD-10 codes from clinical notes |
 | `/recommend/treatment` | POST | Treatment recommendations (RAG+LLM or fallback) |
@@ -130,23 +147,34 @@ curl -X POST http://localhost:8000/recommend/treatment \
 | `/redoc` | GET | ReDoc UI |
 
 ### Request size limits
-- `clinical_note` max 10,000 characters (enforced by Pydantic)
+- `clinical_note` / `clinical_text` max 10,000 characters (enforced by Pydantic)
 - Ollama API timeout: 120 seconds
 - Frontend API timeout: 30 seconds (treatment), 15 seconds (ICD-10)
 
 ## Supported Cancer Types (Turkish)
 
-Hardcoded in three locations that must stay in sync:
+Defined in `backend/config.py:CANCER_KEYWORDS`. To add a new cancer type, edit `config.py` and re-run `export_data.py`.
 
-| Cancer Type | ICD-10 Prefix | Location |
-|-------------|---------------|----------|
-| Karaciğer kanseri | C22 | `data_processor.py:74`, `rag_engine.py:170`, `frontend/app.py:145` |
-| Meme Kanseri | C50 | `data_processor.py:77-78`, `rag_engine.py:174`, `frontend/app.py:146` |
-| Multipl miyelom | C90 | `data_processor.py:82`, `rag_engine.py:178`, `frontend/app.py:147` |
-| Over kanseri | C56 | `data_processor.py:79-80`, `rag_engine.py:182`, `frontend/app.py:148` |
-| Prostat kanseri | C61 | `data_processor.py:81`, `rag_engine.py:186`, `frontend/app.py:149` |
-
-To add a new cancer type, edit **all three** files and regenerate.
+| Cancer Type | ICD-10 Prefix |
+|-------------|---------------|
+| Karaciğer kanseri | C22 |
+| Meme Kanseri | C50 |
+| Multipl miyelom | C90 |
+| Over kanseri | C56 |
+| Prostat kanseri | C61 |
+| Akciğer kanseri | C34 |
+| Kolon kanseri | C18 |
+| Pankreas kanseri | C25 |
+| Mide kanseri | C16 |
+| Mesane kanseri | C67 |
+| Böbrek kanseri | C64 |
+| Lenfoma | C81-C85 |
+| Lösemi | C91-C95 |
+| Tiroid kanseri | C73 |
+| Baş boyun kanseri | C00-C14 |
+| Endometriyum kanseri | C54 |
+| Serviks kanseri | C53 |
+| Malign melanom | C43 |
 
 ## Data Pipeline
 
@@ -158,8 +186,8 @@ backend/data_processor.py — load, clean, extract cancer types from text, lab v
 backend/export_data.py
     ├── data/knowledge_base.json    — ICD-10 code → cancer_type mappings
     ├── data/training_data.json     — Q&A pairs for LoRA fine-tuning
+    ├── data/cleaned_patients.csv   — Structured patient data
     └── data/chroma/                — Vector database (indexed by index_patient_data())
-Note: `export_cleaned_data()` exists but is NOT called from `main()`.
 ```
 
 The knowledge_base.json entry format:
@@ -173,13 +201,11 @@ The knowledge_base.json entry format:
 
 ## ML Training (Separate Pipelines)
 
-These are side features, not required for the main app to run.
-
 ### XGBoost Cancer Classifier (`backend/cancer_classifier.py`)
 - Classifies cancer type from lab values (17 lab columns)
 - Trained with: XGBoost, StandardScaler, LabelEncoder
-- Outputs models: `cancer_classifier.joblib`, `feature_scaler.joblib`, `label_encoder.joblib`
-- Requires `xgboost` and `scikit-learn` (NOT in `requirements.txt`; install manually or via `shell.nix`)
+- Outputs: `models/cancer_classifier.joblib`, `models/feature_scaler.joblib`, `models/label_encoder.joblib`
+- Requires `xgboost` and `scikit-learn`
 
 ### LoRA Fine-tuning (`train.py`)
 - Fine-tunes Qwen2-1.8B on patient Q&A pairs
@@ -196,7 +222,7 @@ Environment variables (all optional with defaults):
 OLLAMA_HOST=http://localhost:11434    # Ollama server URL
 OLLAMA_MODEL=qwen2:7b-instruct-q5_K_M# Ollama model name
 ALLOWED_ORIGINS=*                     # CORS origins (change in production)
-API_BASE_URL=http://localhost:8000    # Frontend → API URL (used by Streamlit)
+LOG_LEVEL=INFO                        # Logging level
 ```
 
 Variables are loaded via `python-dotenv` in `rag_engine.py`. Copy `.env.example` to `.env` to override.
@@ -205,27 +231,27 @@ Variables are loaded via `python-dotenv` in `rag_engine.py`. Copy `.env.example`
 
 | Path | Purpose |
 |------|---------|
-| `backend/api.py` | FastAPI app, lifespan events, route handlers, Pydantic models |
+| `backend/config.py` | All constants, env vars, patterns (single source of truth) |
+| `backend/api.py` | FastAPI app, lifespan events, route handlers |
 | `backend/rag_engine.py` | ChromaDB client, Ollama API calls, fallback protocols, prompt builder |
-| `backend/data_processor.py` | Excel loading, cleaning, ICD-10 extraction, training pair creation |
-| `backend/export_data.py` | CLI entrypoint to generate all data files from Excel |
+| `backend/data_processor.py` | CSV/Excel loading, cleaning, ICD-10 extraction, training pair creation |
+| `backend/export_data.py` | CLI entrypoint to generate all data files |
+| `backend/models.py` | Pydantic request/response schemas |
+| `backend/utils.py` | Pure helper functions |
+| `backend/exceptions.py` | Custom exception hierarchy |
 | `backend/cancer_classifier.py` | XGBoost model training (separate feature) |
-| `frontend/app.py` | Streamlit UI, dark theme, two-tab layout (removed — use index.html instead) |
 | `index.html` | Popup overlay frontend (served by FastAPI at GET /) |
-| `train.py` | LoRA fine-tuning script for Qwen2 (separate entrypoint) |
+| `train.py` | LoRA fine-tuning script for Qwen2 |
 | `data/knowledge_base.json` | ICD-10 mappings (required at API startup) |
 | `data/chroma/` | ChromaDB persistent vector index (created at runtime) |
-| `hackathon_veri.csv` | Source data — must exist at repo root for export (365K rows, 31 cols) |
-| `docs/api.md` | Full API documentation |
-| `docs/development.md` | Development guide with debugging tips |
-| `docs/deployment.md` | Docker, cloud, and production deployment |
+| `hackathon_veri.csv` | Source data — must exist at repo root (365K rows, 31 cols) |
 
 ## Response Format: Turkish Only
 
 All system interactions use Turkish:
-- Fallback protocol text is Turkish (hardcoded in `rag_engine.py:167-203`)
-- LLM system prompt instructs Turkish responses (`rag_engine.py:23-38`)
-- Cancer types and lab names are Turkish (`frontend/app.py`)
+- Fallback protocol text is Turkish (hardcoded in `rag_engine.py`)
+- LLM system prompt instructs Turkish responses
+- Cancer types and lab names are Turkish
 - Frontend displays treatment protocols and lab names in Turkish
 - UI chrome labels (buttons, headings) are in English
 
@@ -233,7 +259,7 @@ ICD-10 code descriptions are in English (from the source Excel).
 
 ## ICD-10 Scoring Algorithm
 
-In `backend/api.py:171-194`, each knowledge base entry is scored:
+In `backend/api.py`, each knowledge base entry is scored:
 
 | Condition | Score |
 |-----------|-------|
@@ -245,7 +271,7 @@ Top 10 results returned sorted by descending score.
 
 ## Fallback Protocols
 
-When Ollama is unavailable (`rag_engine.py:167-203`):
+When Ollama is unavailable (`rag_engine.py`):
 - 5 predefined cancer types with hardcoded Turkish protocols
 - Each includes recommended labs + 2-3 sentence treatment description
 - Unknown cancer types get a generic response suggesting multidisciplinary review
@@ -260,7 +286,8 @@ python -m backend.export_data
 
 ### ChromaDB not ready
 ```bash
-mkdir -p data/chroma   # directory must exist and be writable
+rm -rf data/chroma
+python -m backend.export_data
 ```
 
 ### Ollama connection refused

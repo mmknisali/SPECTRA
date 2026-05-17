@@ -78,7 +78,6 @@ scripts/
 backend/cancer_classifier.py
 backend/export_data.py
 backend/data_processor.py
-backend/rag_indexer.py
 
 # OS
 Thumbs.db

@@ -1,235 +1,300 @@
 # Development Guide
 
-Complete guide for developing and extending SPECTRA.
+## Environment Setup
 
----
+### Option 1: direnv (Recommended)
 
-## Development Setup
-
-### 1. Environment Setup
 ```bash
-# Install dependencies
+direnv allow
+```
+
+This automatically:
+- Activates the virtual environment
+- Sets `PYTHONPATH="$PWD"`
+- Shows a welcome banner with available commands
+
+### Option 2: nix-shell
+
+```bash
+nix-shell
+```
+
+Creates a virtual environment if missing and installs dependencies.
+
+### Option 3: devenv
+
+```bash
+devenv shell
+```
+
+### Option 4: Manual
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+export PYTHONPATH="$PWD"
 pip install -r requirements.txt
-
-# Optional: Install dev tools
-pip install pytest black flake8 mypy
 ```
 
-### 2. Data Export + ChromaDB Indexing (Required)
-```bash
-# Generate knowledge base, training data, and index ChromaDB
-python -m backend.export_data
+## Project Structure
+
+```
+SPECTRA/
+├── backend/
+│   ├── __init__.py             # Package metadata (version)
+│   ├── config.py               # Single source of truth for all constants
+│   ├── exceptions.py           # Custom exception hierarchy
+│   ├── utils.py                # Pure helper functions (no side effects)
+│   ├── models.py               # Pydantic request/response schemas
+│   ├── data_processor.py       # CSV/Excel loading, cleaning, training pairs
+│   ├── rag_engine.py           # ChromaDB + Ollama RAG pipeline
+│   ├── api.py                  # FastAPI application and routes
+│   ├── export_data.py          # Data export pipeline orchestrator
+│   └── cancer_classifier.py    # XGBoost model (optional)
+├── docs/
+│   ├── api.md                  # API reference
+│   ├── development.md          # This file
+│   └── deployment.md           # Deployment guide
+├── index.html                  # Frontend popup (served at GET /)
+├── requirements.txt            # Python dependencies
+├── .envrc                      # direnv configuration
+├── shell.nix                   # Nix shell configuration
+├── devenv.nix                  # devenv configuration
+├── AGENTS.md                   # Agent guide
+└── README.md                   # Main documentation
 ```
 
-This creates:
-- `data/knowledge_base.json` - ICD-10 mappings
-- `data/training_data.json` - Training pairs
-- `data/chroma/` - ChromaDB vector index for RAG
+## Module Responsibilities
 
-### 3. Start Development Server
+### `config.py`
+Centralizes all configuration:
+- Project paths (`ROOT_DIR`, `DATA_DIR`, `MODELS_DIR`)
+- Ollama settings (`OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT`)
+- API settings (`ALLOWED_ORIGINS`, `MAX_CLINICAL_NOTE_LENGTH`)
+- Domain data (`CANCER_KEYWORDS`, `ICD10_CANCER_MAPPING`, `LAB_REFERENCE_RANGES`)
 
-Single terminal:
-```bash
-# With auto-reload
-python -m backend.api
-# Or with uvicorn directly
-uvicorn backend.api:app --reload --port 8000
-```
+**To add a new cancer type:** Edit `CANCER_KEYWORDS` and optionally `ICD10_CANCER_MAPPING`, then re-run `export_data.py`.
 
-Access:
-- Frontend UI: http://localhost:8000
-- API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+### `utils.py`
+Pure functions with no side effects:
+- `extract_cancer_type(text)` — Keyword-based cancer extraction
+- `extract_icd10_codes(string)` — Regex ICD-10 extraction
+- `extract_drugs(string)` — Bracket-delimited drug extraction
+- `extract_labs_from_text(text)` — Lab value parsing
+- `flag_abnormal_labs(dict)` — Range checking
+- `clean_string_column(value)` — String cleaning
+- `truncate_text(text, max)` — Text truncation
+- `calculate_risk_score(...)` — Risk level calculation
 
----
+### `models.py`
+Pydantic schemas organized by domain:
+- ICD-10: `ICD10Request`, `ICD10Code`, `ICD10Response`
+- Treatment: `TreatmentLabInput`, `TreatmentRequest`, `TreatmentResponse`
+- Summary: `AnalyzeSummaryRequest`, `AnalyzeSummaryResponse`
+- Risk: `AnalyzeRiskRequest`, `AnalyzeRiskResponse`
+- Health: `HealthResponse`
+- Info: `APIInfoResponse`
 
-## Project Structure Details
+### `data_processor.py`
+Data loading and processing pipeline:
+1. `load_dataset()` — Read CSV or Excel with fallback paths
+2. `extract_lab_values(row)` — Structured columns + text parsing
+3. `process_patient(row)` — Full row → structured dict
+4. `create_training_pairs(df)` — Q&A pairs for LoRA
+5. `create_icd10_knowledge_base(df)` — ICD-10 → cancer_type map
+6. `load_and_process()` — Orchestrates steps 1-5
 
-### Backend (`backend/`)
+### `rag_engine.py`
+RAG pipeline with fallback:
+- `get_chroma_client()` — ChromaDB client initialization
+- `query_similar_patients(type)` — Search by cancer type
+- `query_similar_patients_by_text(text)` — Search by clinical text
+- `call_ollama_api(prompt)` — LLM API call
+- `parse_llm_response(text)` — JSON parsing
+- `build_treatment_prompt(...)` — Prompt construction
+- `get_treatment_recommendation(type, labs)` — RAG + LLM treatment
+- `get_fallback_recommendation(type)` — Rule-based treatment (5 types)
+- `get_fallback_summary(text, labs)` — Rule-based summary
+- `get_fallback_risk(text, labs)` — Rule-based risk assessment
+- `analyze_patient_summary(text, labs)` — Summary with fallback
+- `analyze_risk_assessment(text, labs)` — Risk with fallback
+- `index_patient_data(df)` — ChromaDB bulk indexing
+- `check_rag_system()` — Status check
 
-| File | Purpose |
-|------|---------|
-| `api.py` | FastAPI routes, request/response models, health checks |
-| `rag_engine.py` | ChromaDB queries, Ollama integration, fallback protocols, patient summary & risk analysis |
-| `data_processor.py` | CSV loading, cleaning, ICD-10 extraction, cancer type mapping |
-| `export_data.py` | Export processed data to JSON/CSV + ChromaDB indexing |
-| `cancer_classifier.py` | ML model for cancer type prediction |
+### `api.py`
+FastAPI application:
+- Lifespan handler for startup/shutdown
+- CORS middleware
+- 7 endpoints (/, /api, /health, /predict/icd10, /recommend/treatment, /analyze/summary, /analyze/risk)
+- Request validation via Pydantic models
+- Error handling with HTTPException
 
-### Frontend
-
-| File | Purpose |
-|------|---------|
-| `index.html` | Single-page popup UI served from FastAPI at `GET /` |
-
----
+### `export_data.py`
+Pipeline orchestrator:
+- `export_training_data(pairs)` → `data/training_data.json`
+- `export_knowledge_base(kb)` → `data/knowledge_base.json`
+- `export_cleaned_data(df)` → `data/cleaned_patients.csv`
+- `index_chromadb(df)` → `data/chroma/`
 
 ## Data Flow
 
 ```
-hackathon_veri.csv
+hackathon_veri.csv (365K rows)
     ↓
-data_processor.py (cleaning, ICD-10 extraction)
+data_processor.py
+    ├── extract_cancer_type() from epikriz/hikaye text
+    ├── extract_lab_values() from columns + lab_sonuclari text
+    ├── extract_drugs() from ilac brackets
+    └── extract_icd10_codes() from icd10 column
     ↓
 export_data.py
-    ├──→ knowledge_base.json
-    ├──→ training_data.json
-    └──→ chroma/ (vector index for RAG)
+    ├── training_data.json (Q&A pairs)
+    ├── knowledge_base.json (ICD-10 mappings)
+    ├── cleaned_patients.csv (structured data)
+    └── chroma/ (vector index)
     ↓
-FastAPI runtime:
-    ├── /predict/icd10  →  knowledge_base.json
-    ├── /recommend/treatment  →  ChromaDB + Ollama / fallback
-    ├── /analyze/summary  →  ChromaDB + Ollama / fallback
-    └── /analyze/risk  →  ChromaDB + Ollama / fallback
+api.py (FastAPI)
+    ├── /analyze/risk → rag_engine.py → Ollama or fallback
+    ├── /analyze/summary → rag_engine.py → Ollama or fallback
+    └── /predict/icd10 → knowledge_base.json scoring
 ```
-
----
 
 ## Code Conventions
 
 ### Python Style
 - Follow PEP 8
-- Use type hints for function signatures
-- Docstrings for all public functions
+- Use type hints for all function signatures
+- Docstrings (Google style) for all public functions
 - Maximum line length: 100 characters
+- Import order: stdlib → third-party → local
 
-### Example:
+### Example
+
 ```python
-def get_treatment_recommendation(
-    cancer_type: str,
-    patient_labs: Optional[Dict[str, float]] = None
-) -> Dict[str, Any]:
-    """
-    Get treatment recommendation using RAG + LLM.
-    
+from typing import Optional
+import re
+
+from backend.config import CANCER_KEYWORDS
+
+
+def extract_cancer_type(text: str) -> Optional[str]:
+    """Extract cancer type from clinical text.
+
     Args:
-        cancer_type: Turkish cancer type name
-        patient_labs: Optional lab values for personalization
-        
+        text: Clinical text to analyze.
+
     Returns:
-        Dict with recommended_labs, treatment_protocol, source
+        Canonical cancer type name or None.
     """
-    # Implementation
+    if not text:
+        return None
+    ...
 ```
-
-### Naming Conventions
-- Functions: `snake_case`
-- Classes: `PascalCase`
-- Constants: `UPPER_SNAKE_CASE`
-- Files: `snake_case.py`
-
----
 
 ## Adding New Cancer Types
 
-### 1. Update ICD-10 Mappings
-Edit `backend/data_processor.py`:
-```python
-def get_primary_cancer_type(icd10_codes: List[str]) -> Optional[str]:
-    mapping = {
-        'C22': 'Karaciğer kanseri',
-        'C50': 'Meme Kanseri',
-        # Add new mapping:
-        'C18': 'Kolon kanseri',  # New!
-    }
-```
+1. Edit `backend/config.py`:
+   ```python
+   CANCER_KEYWORDS = [
+       ...
+       (["kolon kanseri", "kolon karsinomu", "kolorektal"], "Kolon kanseri"),
+   ]
+   ```
 
-### 2. Add Fallback Protocol
-Edit `backend/rag_engine.py`:
-```python
-def get_fallback_recommendation(cancer_type: str) -> Dict[str, Any]:
-    fallback_map = {
-        # Add new protocol
-        "kolon kanseri": {
-            "recommended_labs": ["CEA", "CA-19.9", "Hb", "Kreatinin"],
-            "treatment_protocol": "Kolon kanserinde FOLFOX veya FOLFIRI..."
-        }
-    }
-```
+2. Optionally add ICD-10 mapping:
+   ```python
+   ICD10_CANCER_MAPPING = {
+       ...
+       "C18": "Kolon kanseri",
+   }
+   ```
 
-### 3. Update Cancer Type List
-Edit `backend/data_processor.py`:
-```python
-CANCER_KEYWORDS = [
-    ...
-    (["kolon kanseri", ...], "Kolon kanseri"),  # Add here
-]
-```
-Edit `index.html` to add the new type to the UI dropdown if present.
+3. Add fallback protocol in `rag_engine.py`:
+   ```python
+   fallback_map = {
+       ...
+       "kolon kanseri": {
+           "recommended_labs": ["CEA", "CA-19.9", "Hb"],
+           "treatment_protocol": "...",
+       },
+   }
+   ```
 
-### 4. Regenerate Data
-```bash
-python -m backend.export_data
-```
-
----
+4. Regenerate data:
+   ```bash
+   python -m backend.export_data
+   ```
 
 ## Debugging
 
 ### API Debugging
 ```bash
 # Enable debug logging
-export LOG_LEVEL=debug
+export LOG_LEVEL=DEBUG
 python -m backend.api
 
-# Test endpoint directly
+# Test endpoint
 curl -v http://localhost:8000/health
 ```
 
 ### RAG System Debugging
-```bash
+```python
 # Check ChromaDB status
-python -c "from backend.rag_engine import check_rag_system; print(check_rag_system())"
+from backend.rag_engine import check_rag_system
+print(check_rag_system())
 
-# Query similar patients by cancer type
-python -c "from backend.rag_engine import query_similar_patients; print(query_similar_patients('meme kanseri'))"
+# Query similar patients
+from backend.rag_engine import query_similar_patients
+print(query_similar_patients("meme kanseri"))
 
-# Query similar patients by clinical text
-python -c "from backend.rag_engine import query_similar_patients_by_text; print(query_similar_patients_by_text('meme kanseri kemoterapi alan hasta'))"
+# Query by text
+from backend.rag_engine import query_similar_patients_by_text
+print(query_similar_patients_by_text("meme kanseri kemoterapi"))
 ```
 
-### Frontend Debugging
-```bash
-# Frontend is served by FastAPI — check the browser's dev console or reload
-# Static file: ROOT_DIR / index.html
-```
+### Data Processing Debugging
+```python
+from backend.data_processor import load_dataset, process_patient
 
----
+df = load_dataset()
+print(f"Columns: {df.columns.tolist()}")
+print(f"Shape: {df.shape}")
+
+# Process first row
+patient = process_patient(df.iloc[0])
+print(patient)
+```
 
 ## Common Issues
 
-### Issue: Knowledge base not found
-**Error**: `Knowledge base not found - run export_data.py first`
-
-**Fix**:
+### Knowledge base not found
 ```bash
 python -m backend.export_data
 ```
 
-### Issue: ChromaDB not ready
-**Error**: `ChromaDB client not available`
-
-**Fix**: Run export_data to index ChromaDB:
-```bash
-python -m backend.export_data
-```
-For a fresh rebuild, clear and re-index:
+### ChromaDB not ready
 ```bash
 rm -rf data/chroma
 python -m backend.export_data
 ```
 
-### Issue: Ollama connection failed
-**Error**: Ollama unavailable in health check
-
-**Fix**: 
+### Ollama connection failed
 - Check Ollama is running: `ollama list`
-- Verify OLLAMA_HOST environment variable
-- Or ignore - system uses fallback protocols
+- Verify `OLLAMA_HOST` environment variable
+- System works without Ollama (fallback mode)
 
-### Issue: CORS errors in browser
-**Fix**: Set `ALLOWED_ORIGINS=*` or specify your domain
+### CORS errors
+Set `ALLOWED_ORIGINS` to your domain:
+```bash
+export ALLOWED_ORIGINS="https://yourdomain.com"
+```
 
----
+### ModuleNotFoundError
+```bash
+export PYTHONPATH="$PWD"
+# Or use direnv:
+direnv allow
+```
 
 ## Testing
 
@@ -241,103 +306,25 @@ curl http://localhost:8000/health
 # ICD-10 prediction
 curl -X POST http://localhost:8000/predict/icd10 \
   -H "Content-Type: application/json" \
-  -d '{"clinical_note": "test", "cancer_type": "meme kanseri"}'
+  -d '{"clinical_note": "meme kanseri", "cancer_type": "Meme Kanseri"}'
 
 # Treatment recommendation
 curl -X POST http://localhost:8000/recommend/treatment \
   -H "Content-Type: application/json" \
   -d '{"cancer_type": "meme kanseri"}'
 
-# Patient summary analysis
+# Patient summary
 curl -X POST http://localhost:8000/analyze/summary \
   -H "Content-Type: application/json" \
-  -d '{"clinical_text": "60 yasinda meme kanseri hastasi, opere, kemoterapi aliyor"}'
+  -d '{"clinical_text": "60 yaşında meme kanseri hastası"}'
 
 # Risk assessment
 curl -X POST http://localhost:8000/analyze/risk \
   -H "Content-Type: application/json" \
-  -d '{"clinical_text": "Metastatik meme kanseri, karaciger metastazi", "lab_text": "AST: 120, ALT: 95"}'
+  -d '{"clinical_text": "Metastatik meme kanseri", "lab_text": "AST: 120"}'
 ```
 
 ### Load Testing
 ```bash
-# Using ab (Apache Bench)
 ab -n 100 -c 10 http://localhost:8000/health
 ```
-
----
-
-## Environment Variables
-
-Create `.env` file for local development:
-```bash
-# Ollama configuration
-OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=qwen2:7b-instruct-q5_K_M
-
-# CORS (for local dev)
-ALLOWED_ORIGINS=*
-```
-
-Load with:
-```python
-from dotenv import load_dotenv
-load_dotenv()
-```
-
----
-
-## Performance Optimization
-
-### ChromaDB
-- Index is created once by `export_data.py` (not at runtime)
-- Subsequent queries are fast
-- Clear `data/chroma/` and re-run `export_data.py` to rebuild
-
-### API
-- Knowledge base loaded once at startup
-- Use `uvicorn --workers 4` for multi-process
-
-### Frontend
-- Static `index.html` served directly by FastAPI
-- No additional frontend server needed
-
----
-
-## Adding New Features
-
-### New API Endpoint
-1. Add Pydantic models in `api.py`
-2. Implement route handler
-3. If RAG-based: add function in `rag_engine.py`
-4. If Ollama-based: add system prompt in `rag_engine.py`
-5. Update `docs/api.md`
-
-### New Data Processing
-1. Add cleaning logic in `data_processor.py`
-2. Export in `export_data.py`
-3. Regenerate data files + ChromaDB
-4. Test with `python -m backend.export_data`
-
-### New UI Component
-1. Edit `index.html`
-2. Add API call to relevant endpoint
-3. Add error handling in the JavaScript
-4. Test in browser
-
----
-
-## Deployment Checklist
-
-Before deploying:
-- [ ] Run `export_data.py` to generate KB + ChromaDB
-- [ ] Verify `data/chroma/` exists
-- [ ] Test `/health` endpoint
-- [ ] Test ICD-10 prediction
-- [ ] Test treatment recommendation
-- [ ] Test `/analyze/summary` and `/analyze/risk`
-- [ ] Verify Ollama or accept fallback
-- [ ] Set production `ALLOWED_ORIGINS`
-- [ ] Configure logging
-
-See [deployment.md](deployment.md) for deployment options.

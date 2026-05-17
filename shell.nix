@@ -7,11 +7,14 @@ pkgs.mkShell {
     python311Packages.virtualenv
     gcc-unwrapped
     stdenv.cc.cc.lib
+    git
+    curl
   ];
 
   shellHook = ''
     export LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH
     export PYTHONPATH="$PWD"
+    export SPECTRA_ENV=development
     
     # Create venv if needed
     if [ ! -d "venv" ]; then
@@ -24,12 +27,22 @@ pkgs.mkShell {
     
     # Install requirements if needed
     if [ ! -f "venv/installed.flag" ]; then
-      echo "Installing requirements..."
-      pip install pandas openpyxl numpy scikit-learn xgboost joblib transformers peft accelerate bitsandbytes sentence-transformers langchain langchain-community chromadb faiss-cpu fastapi uvicorn streamlit plotly requests python-dotenv pydantic tqdm
+      echo "Installing requirements from requirements.txt..."
+      pip install -r requirements.txt
       touch venv/installed.flag
     fi
     
-    echo "Python: $(python --version)"
-    echo "Environment ready!"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  SPECTRA - Clinical Decision Support System"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  Commands:"
+    echo "    python -m backend.export_data    # Process data files"
+    echo "    python -m backend.api            # Start API + UI"
+    echo "    python -m backend.cancer_classifier  # Train ML model"
+    echo ""
+    echo "  API: http://localhost:8000"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   '';
 }
