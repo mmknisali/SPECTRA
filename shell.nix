@@ -9,38 +9,40 @@ pkgs.mkShell {
     stdenv.cc.cc.lib
     git
     curl
+    lsof
   ];
 
   shellHook = ''
     export LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH
     export PYTHONPATH="$PWD"
     export SPECTRA_ENV=development
-    
+
     # Create venv if needed
     if [ ! -d "venv" ]; then
       echo "Creating virtual environment..."
       python3.11 -m venv venv
     fi
-    
+
     # Activate venv
     source venv/bin/activate
-    
+
     # Install requirements if needed
     if [ ! -f "venv/installed.flag" ]; then
       echo "Installing requirements from requirements.txt..."
       pip install -r requirements.txt
       touch venv/installed.flag
     fi
-    
+
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  SPECTRA - Clinical Decision Support System"
+    echo "  SPECTRA — Clinical Decision Support System"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "  Commands:"
-    echo "    python -m backend.export_data    # Process data files"
-    echo "    python -m backend.api            # Start API + UI"
-    echo "    python -m backend.cancer_classifier  # Train ML model"
+    echo "    devenv up              # Start all services"
+    echo "    bash start.sh          # Start API with edge-case handling"
+    echo "    python -m backend.export_data    # Generate data"
+    echo "    python -m backend.api            # Start API"
     echo ""
     echo "  API: http://localhost:8000"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
